@@ -91,8 +91,14 @@ def test_scorer_implements_interface_and_extracts_score_and_usage():
     assert isinstance(scorer, Scorer)
     assert scorer.score("query", "candidate evidence") == 0.625
     assert scorer.last_record is not None
-    assert scorer.last_record.model_requested == "jev-1.13.0"
-    assert scorer.last_record.model_returned == "jev-1.13.0"
+    assert scorer.last_record.model_requested == "jev-latest"
+    assert scorer.last_record.model_returned == "jev-latest"
+    assert scorer.last_record.sdk_version is None or scorer.last_record.sdk_version
+    assert scorer.last_record.timestamp_utc.endswith("+00:00")
+    assert (
+        scorer.last_record.git_commit_sha is None
+        or len(scorer.last_record.git_commit_sha) in {40, 64}
+    )
     assert scorer.last_record.input_tokens == 120
     assert scorer.last_record.output_tokens == 4
     assert scorer.last_record.estimated_input_cost_usd == pytest.approx(
@@ -151,6 +157,49 @@ def test_missing_model_and_usage_metadata_do_not_discard_valid_score():
     assert scorer.last_record.output_tokens is None
     assert scorer.last_record.estimated_input_cost_usd is None
     assert scorer.last_record.input_cost_label is None
+
+
+def test_explicit_model_override_and_concrete_returned_model_are_recorded():
+    client = FakeClient(FakeResponse(0.5, model="jev-4.2.1"))
+    scorer = JevEvidenceScorer(
+        client=client,
+        noul_factory=lambda instructions: FakeNoul(instructions=instructions),
+        model="jev-latest",
+    )
+
+    assert scorer.score("query", "candidate") == 0.5
+    assert client.calls[0][2]["model"] == "jev-latest"
+    assert scorer.last_record is not None
+    assert scorer.last_record.model_requested == "jev-latest"
+    assert scorer.last_record.model_returned == "jev-4.2.1"
+
+
+def test_arbitrary_valid_model_override_is_passed_and_recorded():
+    model = "custom-valid-model"
+    client = FakeClient(FakeResponse(0.5, model=model))
+    scorer = JevEvidenceScorer(
+        client=client,
+        noul_factory=lambda instructions: FakeNoul(instructions=instructions),
+        model=model,
+    )
+
+    assert scorer.score("query", "candidate") == 0.5
+    assert client.calls[0][2]["model"] == model
+    assert scorer.last_record is not None
+    assert scorer.last_record.model_requested == model
+    assert scorer.last_record.model_returned == model
+
+
+def test_runtime_metadata_uses_local_values_when_available(monkeypatch):
+    monkeypatch.setattr(jev_module, "_local_sdk_version", lambda: "0.7.2")
+    monkeypatch.setattr(jev_module, "_git_commit_sha", lambda: "a" * 40)
+    scorer = make_scorer(FakeClient())
+
+    assert scorer.score("query", "candidate") == 0.75
+    assert scorer.last_record is not None
+    assert scorer.last_record.sdk_version == "0.7.2"
+    assert scorer.last_record.git_commit_sha == "a" * 40
+    assert scorer.last_record.timestamp_utc.endswith("+00:00")
 
 
 def test_missing_api_key_fails_before_import_or_network(monkeypatch):

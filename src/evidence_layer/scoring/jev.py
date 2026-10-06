@@ -3,19 +3,22 @@
 from __future__ import annotations
 
 import importlib
+from importlib.metadata import PackageNotFoundError, version
 import math
 import os
 import re
+import subprocess
 import time
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Protocol
 
 from evidence_layer.scoring.base import Scorer
 
-DEFAULT_JEV_MODEL = "jev-1.13.0"
+DEFAULT_JEV_MODEL = "jev-latest"
 _QUESTION_ID = "candidate_0"
 _QUESTION_TEXT = (
     "Determine whether the referenced candidate contains useful evidence "
@@ -81,6 +84,9 @@ class JevBenchmarkRecord:
     candidate_count: int
     model_requested: str
     model_returned: str | None
+    sdk_version: str | None
+    timestamp_utc: str
+    git_commit_sha: str | None
     input_tokens: int | None
     output_tokens: int | None
     latency_ms: int
@@ -122,6 +128,31 @@ def _sdk_retry_argument() -> None:
     return None
 
 
+def _local_sdk_version() -> str | None:
+    try:
+        return version("typesafe-sdk")
+    except PackageNotFoundError:
+        return None
+
+
+def _git_commit_sha() -> str | None:
+    try:
+        result = subprocess.run(
+            ("git", "rev-parse", "HEAD"),
+            cwd=Path(__file__).resolve().parents[3],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=1,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    commit_sha = result.stdout.strip()
+    if re.fullmatch(r"[0-9a-f]{40,64}", commit_sha):
+        return commit_sha
+    return None
+
+
 def _valid_identifier(value: object) -> str | None:
     if isinstance(value, str) and _SAFE_IDENTIFIER.fullmatch(value):
         return value
@@ -129,12 +160,20 @@ def _valid_identifier(value: object) -> str | None:
 
 
 def _safe_returned_model(
-    value: object, query: str, text: str, api_key: str | None
+    value: object,
+    requested_model: str,
+    query: str,
+    text: str,
+    api_key: str | None,
 ) -> str | None:
     model = _valid_identifier(value)
     if model is None:
         return None
     model_folded = model.casefold()
+    if model.casefold() != requested_model.casefold() and not model_folded.startswith(
+        "jev-"
+    ):
+        return None
     if any(
         forbidden and forbidden.casefold() in model_folded
         for forbidden in (query, text, api_key)
@@ -276,6 +315,9 @@ class JevEvidenceScorer(Scorer):
             candidate_count=1,
             model_requested=self.model,
             model_returned=model_returned,
+            sdk_version=_local_sdk_version(),
+            timestamp_utc=datetime.now(timezone.utc).isoformat(),
+            git_commit_sha=_git_commit_sha(),
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             latency_ms=max(0, latency_ms),
@@ -316,10 +358,8 @@ class JevEvidenceScorer(Scorer):
                 usage = None
             self.last_record = self._make_record(
                 model_returned=_safe_returned_model(
-                    returned_model, query, text, api_key
-                )
-                if returned_model == self.model
-                else None,
+                    returned_model, self.model, query, text, api_key
+                ),
                 input_tokens=_optional_token_count(usage, "input_tokens"),
                 output_tokens=_optional_token_count(usage, "output_tokens"),
                 latency_ms=int((time.monotonic() - started) * 1000),

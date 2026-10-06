@@ -431,12 +431,20 @@ pytest                              # run all tests
 
 ## 18. Optional Jev scorer
 
-The Jev scorer is an optional, pinned provider integration available through
-`pip install .[jev]` (`typesafe-sdk==0.7.2`). The default project installation
-does not import or require the TypeSafe SDK. Its unit tests use fake clients
-only; no live Jev benchmark has been run in this phase. Input-cost estimates,
-when later available from provider-reported token usage, are estimates from
-vendor-published pricing and are not invoices. The benchmark retry settings
-remain provider-neutral configuration only: SDK retry is disabled until its
-policy constructor is verified, and retry counts are not measured or reported
-by this integration.
+The Jev scorer is an optional integration available through `pip install
+.[jev]` (`typesafe-sdk==0.7.2`). The SDK version is pinned; the requested model
+defaults to `jev-latest` because that alias was available to the account
+verified during development. It is an alias and may resolve to a changing
+underlying model; this does not provide pinned-model reproducibility. Callers
+can select another model explicitly with `JevEvidenceScorer(model="...")`.
+
+The default project installation does not import or require the TypeSafe SDK.
+Unit tests use fake clients. Future run metadata records the requested model,
+the actual `response.model` when safely available, the locally installed SDK
+version, a UTC timestamp, and the Git commit SHA when available. It does not
+claim production readiness or benchmark results. Input-cost estimates, when
+available from provider-reported token usage, are estimates from
+vendor-published pricing and are not invoices. Retry settings remain
+provider-neutral configuration only: SDK retry is disabled until its policy
+constructor is verified, and retry counts are not measured or reported by this
+integration.
