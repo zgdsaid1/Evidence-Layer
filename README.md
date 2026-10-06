@@ -429,5 +429,14 @@ python scripts/run_sensitivity.py   # stopword sensitivity (dev only)
 pytest                              # run all tests
 ```
 
+## 18. Optional Jev scorer
 
-
+The Jev scorer is an optional, pinned provider integration available through
+`pip install .[jev]` (`typesafe-sdk==0.7.2`). The default project installation
+does not import or require the TypeSafe SDK. Its unit tests use fake clients
+only; no live Jev benchmark has been run in this phase. Input-cost estimates,
+when later available from provider-reported token usage, are estimates from
+vendor-published pricing and are not invoices. The benchmark retry settings
+remain provider-neutral configuration only: SDK retry is disabled until its
+policy constructor is verified, and retry counts are not measured or reported
+by this integration.

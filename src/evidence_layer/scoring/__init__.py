@@ -6,7 +6,12 @@ provider behind the same ``Scorer.score(query, text)`` contract.
 """
 
 from evidence_layer.scoring.base import Scorer
+from evidence_layer.scoring.jev import JevEvidenceScorer
 from evidence_layer.scoring.lexical import LexicalNoStopwordScorer, LexicalScorer
 
-__all__ = ["Scorer", "LexicalScorer", "LexicalNoStopwordScorer"]
-
+__all__ = [
+    "Scorer",
+    "LexicalScorer",
+    "LexicalNoStopwordScorer",
+    "JevEvidenceScorer",
+]

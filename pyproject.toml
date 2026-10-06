@@ -18,6 +18,9 @@ dependencies = [
 dev = [
     "pytest>=8",
 ]
+jev = [
+    "typesafe-sdk==0.7.2",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
