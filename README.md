@@ -318,3 +318,116 @@ recall@k and context-reduction versus the current no-op baseline.
   preserve answer quality — that is exactly what it is designed to test later,
   and no claim is made about the outcome now.
 
+---
+
+## 16. Phase 2 — local lexical baseline and evaluation harness
+
+Phase 2 adds a **local, deterministic lexical baseline** and a metrics harness.
+It is **not** semantic retrieval, Jev, a reranker, an LLM, a security audit, or a
+product benchmark. It measures word-overlap evidence selection on the Phase 1
+dataset and reports evidence-retention / context-reduction metrics.
+
+### Components
+
+- `LexicalScorer` (`src/evidence_layer/scoring/lexical.py`) — standard-library
+  only, no network access. Lower-cases, tokenizes on `[a-z0-9]+`, drops a small
+  fixed English stopword list, and scores with cosine similarity of raw
+  term-frequency vectors. Deterministic for a fixed input.
+- `Scorer` (`src/evidence_layer/scoring/base.py`) — the interface a future Jev /
+  reranker / provider scorer can implement.
+- `select_top_k` (`src/evidence_layer/selection.py`) — returns the top-k
+  candidate IDs by score (ties broken by `candidate_id` ascending). `k` is
+  configurable and validated: it must be an integer ≥ 1, otherwise it fails
+  with a clear `ValueError` / `TypeError`.
+- Harness (`scripts/run_evaluation.py`) — runs K = 1, 3, 5 on the development
+  and held-out test sets independently and writes `reports/baseline_dev.json`,
+  `reports/baseline_test.json`, and `reports/baseline_cases.csv`.
+
+### Metric definitions
+
+- `recall@k` = |gold ∩ selected| / |gold|
+- `precision@k` = |gold ∩ selected| / |selected|
+- `mean_selected_evidence_count` = mean number of selected candidates per case
+- `estimated_context_units` = whitespace word count (explicitly NOT a token
+  count; no tokenizer is used)
+- `context_reduction_ratio` = 1 − selected_units / all_candidate_units
+- `failure_count` = number of cases where no gold evidence was selected
+
+### How to run
+
+```bash
+python scripts/build_dataset.py     # regenerate dataset
+python scripts/validate_dataset.py  # validate dataset
+python scripts/run_evaluation.py    # generate baseline reports
+pytest                              # run all tests
+```
+
+### Limitations
+
+- Lexical overlap only: it does not understand meaning, negation, or
+  instruction injection. Prompt-injection cases are *measured*, not "handled".
+- `estimated_context_units` is a whitespace word-count heuristic, not a real
+  tokenizer or cost estimate.
+- The held-out test set is used for reporting only; the algorithm was not tuned
+  on it.
+- The scorer is a *baseline*; it makes no claim of retrieval quality, cost
+  savings, security, or compliance.
+
+---
+
+## 17. Phase 2A — baseline fairness, split audit, and sensitivity analysis
+
+Phase 2A audits the existing lexical baseline **before committing it**, without
+changing the dataset or the corpus.
+
+### New ranking metrics
+
+Added to every K=1/3/5 evaluation:
+
+- `mrr_at_k` — reciprocal rank of the first selected gold candidate
+  (0.0 if none selected).
+- `any_evidence_hit_rate@K` — fraction of cases with **at least one** selected
+  gold candidate.
+- `full_evidence_rate@K` — fraction of cases where **all** gold candidates are
+  selected.
+
+`any_evidence_hit_rate` answers "did we keep *something* relevant?", while
+`full_evidence_rate` answers "did we keep *everything* required?". For an
+individual case, full evidence is 0 when the selected K cannot contain all of
+that case's gold evidence IDs; the aggregate `full_evidence_rate` can still be
+above 0 because some cases have one or fewer gold evidence IDs.
+
+### Split audit
+
+`scripts/run_split_audit.py` writes `reports/split_audit.json` and
+`reports/split_audit.md`. It is **read-only**: it compares development vs
+held-out test on case-type counts, gold/candidate counts, query and candidate
+word counts, query→gold vs query→distractor lexical overlap (stopword-agnostic
+token Jaccard), duplicate/near-duplicate query indicators, and repeated
+question-template indicators. It does not move cases or alter anything.
+
+### Stopword sensitivity
+
+The named baseline is **`lexical_stopword_filtered`** (`LexicalScorer`). A single
+comparison variant **`lexical_no_stopword_filter`** (`LexicalNoStopwordScorer`)
+uses the same tokenization and cosine formula but retains stopwords.
+
+`scripts/run_sensitivity.py` evaluates both variants **on the development split
+only** and writes `reports/sensitivity_dev.json` and
+`reports/sensitivity_dev.csv`. This is for interpretation, not selection: the
+held-out test set is **never used to tune the scorer**, and the no-stopword
+variant does not become the default automatically.
+
+### How to run
+
+```bash
+python scripts/build_dataset.py     # regenerate dataset
+python scripts/validate_dataset.py  # validate dataset
+python scripts/run_evaluation.py    # baseline reports (incl. new ranking metrics)
+python scripts/run_split_audit.py   # split audit (JSON + Markdown)
+python scripts/run_sensitivity.py   # stopword sensitivity (dev only)
+pytest                              # run all tests
+```
+
+
+

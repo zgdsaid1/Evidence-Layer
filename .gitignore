@@ -23,3 +23,7 @@ htmlcov/
 # Generated artifacts (regenerate with scripts/build_dataset.py)
 data/dev/*.jsonl
 data/test/*.jsonl
+
+# Phase 2 evaluation reports (regenerate with scripts/run_evaluation.py)
+reports/
+
