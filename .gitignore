@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+
+# Test / tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Generated artifacts (regenerate with scripts/build_dataset.py)
+data/dev/*.jsonl
+data/test/*.jsonl
+
+# Phase 2 evaluation reports (regenerate with scripts/run_evaluation.py)
+reports/
+
