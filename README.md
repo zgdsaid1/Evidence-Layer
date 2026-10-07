@@ -63,8 +63,10 @@ with one domain: **technical documentation / RAG evidence**.
 
 **Out of scope (explicitly not built, by rule):**
 
-- No Jev, rerankers, or LLM calls
-- No connectors, no cost calculation
+- No Jev, rerankers, or LLM calls in the Phase 1 default core (an optional,
+  separately installed Jev scorer/evaluation path was added in later phases; it
+  may call an external paid API and is never required)
+- No connectors; no cost calculation in the default core
 - No SaaS dashboard, no deployment
 - No API keys, secrets, or `.env` files
 - No paid model APIs (OpenAI, Anthropic, Cohere, Voyage, ...)
@@ -242,8 +244,8 @@ python scripts/validate_dataset.py
 pytest
 ```
 
-Expected test result: **21 passed** (schemas, adapter interface, dataset
-integrity).
+Expected test result: all tests pass (schemas, adapter interface, dataset
+integrity, evaluation, scorers). The count grows as tests are added.
 
 ## 9. Regenerating and extending
 
@@ -316,9 +318,10 @@ recall@k and context-reduction versus the current no-op baseline.
 - `scripts/validate_dataset.py` passes (exit 0), confirming schema validity,
   unique task IDs, non-empty queries/passages, valid gold IDs, required facts,
   distribution, and no dev/test overlap.
-- `pytest` reports 21 passing tests.
-- No paid model API, Jev, reranker, LLM call, connector, cost calculation,
-  `.env`, secret, or deployment is present in the code.
+- `pytest` passes with no failures.
+- The default local core makes no paid model API, Jev, reranker, or LLM call
+  and has no connector, secret, `.env`, or deployment. The optional Jev
+  integration (not installed by default) may call an external API.
 
 **PROPOSAL**
 

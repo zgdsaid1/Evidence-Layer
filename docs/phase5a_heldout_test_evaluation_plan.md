@@ -16,8 +16,11 @@ calibrate, or otherwise change either scorer or its configuration.
 
 - **Lexical:** Existing `LexicalScorer` implementation with its default
   stopword set and token pattern; no constructor overrides.
-- **Jev:** Existing optional Jev integration and its fixed batched request
-  behavior. Query and candidate text go only in the request state. Create one
+- **Jev:** Existing optional Jev integration (`JevEvidenceScorer`, which scores
+  one candidate per `score()` call) as the scoring provider, with a fixed
+  batched request protocol. NOTE: the batched per-record request is a
+  benchmark protocol/external workflow defined by this plan; no batched Jev
+  scorer is implemented in this codebase. Query and candidate text go only in the request state. Create one
   fixed Noul question per candidate, using the same instruction template as the
   completed dev78 run: `Does <candidate_id> contain useful evidence needed to
   answer the task query?` Do not put query or candidate text in instructions.
@@ -25,7 +28,7 @@ calibrate, or otherwise change either scorer or its configuration.
   separately on each request.
 - **Timeout:** 10 seconds per request.
 - **Retry:** `None`; no retries.
-- **Request unit:** Exactly one batched `system_one()` request per test record,
+- **Request unit (protocol; not implemented in the codebase):** Exactly one batched `system_one()` request per test record,
   with all candidates for that record in state and one question per candidate.
 - **Failure handling:** Stop immediately on the first provider or response
   failure. Do not retry or continue with later records. Do not report a
