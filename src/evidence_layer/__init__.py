@@ -3,10 +3,13 @@
 A provider-agnostic evidence-selection and context-reduction layer between an
 AI agent, its retrieval/RAG system, and a large language model.
 
-Phase 1 contains only the domain-agnostic data schemas, an adapter interface,
-one no-op documentation-RAG adapter, and an evaluation dataset built from public
-PostgreSQL documentation. It intentionally does NOT implement any Jev /
-reranker / LLM calls / connectors / cost calculation.
+The default core is local: domain-agnostic data schemas, an adapter interface,
+a no-op documentation-RAG adapter, a lexical scorer, top-k selection, and an
+evaluation harness over a dataset built from public PostgreSQL documentation.
+It makes no network calls. An optional Jev scorer/benchmark integration exists
+(requires the optional extra and an API key, and may call an external paid API,
+including usage/cost recording); no reranker, connector, or batched Jev scorer
+is implemented.
 """
 
 from evidence_layer.schemas import (

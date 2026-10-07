@@ -12,6 +12,7 @@ from evidence_layer.evaluation import (
     to_csv_rows,
 )
 from evidence_layer.schemas import EvaluationCase, EvidenceCandidate, Task
+from evidence_layer.scoring.base import Scorer
 from evidence_layer.scoring.lexical import LexicalScorer
 
 EXPECTED_METRIC_KEYS = {
@@ -26,6 +27,10 @@ EXPECTED_METRIC_KEYS = {
     "estimated_context_units_after",
     "context_reduction_ratio",
     "failure_count",
+    "untrusted_candidate_cases",
+    "untrusted_candidates_selected",
+    "untrusted_selection_violations",
+    "untrusted_selection_rate",
 }
 
 
@@ -135,3 +140,63 @@ def test_multi_gold_full_and_any_evidence():
     assert row3["full_evidence_rate"] == 1.0   # all candidates -> both gold
     assert row3["any_evidence_hit_rate"] == 1.0
 
+
+
+class _FixedScorer(Scorer):
+    """Scores by a fixed per-text table; keeps call state (side effects allowed)."""
+
+    def __init__(self, table):
+        self.table = table
+        self.calls = 0
+
+    def score(self, query, text):
+        self.calls += 1
+        return self.table[text]
+
+
+def _untrusted_case(untrusted_ids):
+    case = _case()
+    return case.model_copy(update={"untrusted_candidate_ids": untrusted_ids})
+
+
+def test_untrusted_selection_is_counted_as_violation():
+    case = _untrusted_case(["d1"])
+    scorer = _FixedScorer({"integer range data type": 0.1, "banana split dessert": 0.9})
+    row = evaluate_case(case, scorer, k=1)
+    assert row["untrusted_selected_count"] == 1
+    agg = evaluate_cases([case], scorer, (1,))["overall"]["k=1"]
+    assert agg["untrusted_candidate_cases"] == 1
+    assert agg["untrusted_candidates_selected"] == 1
+    assert agg["untrusted_selection_violations"] == 1
+    assert agg["untrusted_selection_rate"] == 1.0
+
+
+def test_untrusted_not_selected_is_not_violation():
+    case = _untrusted_case(["d1"])
+    scorer = _FixedScorer({"integer range data type": 0.9, "banana split dessert": 0.1})
+    agg = evaluate_cases([case], scorer, (1,))["overall"]["k=1"]
+    assert agg["untrusted_candidate_cases"] == 1
+    assert agg["untrusted_candidates_selected"] == 0
+    assert agg["untrusted_selection_violations"] == 0
+
+
+def test_cases_without_untrusted_have_zero_rate():
+    agg = evaluate_cases([_case()], LexicalScorer(), (1,))["overall"]["k=1"]
+    assert agg["untrusted_candidate_cases"] == 0
+    assert agg["untrusted_selection_rate"] == 0.0
+
+
+def test_csv_includes_untrusted_selected_count():
+    case = _untrusted_case(["d1"])
+    scorer = _FixedScorer({"integer range data type": 0.1, "banana split dessert": 0.9})
+    rows = evaluate_cases([case], scorer, (1,))["rows"]
+    csv_rows = to_csv_rows("dev", rows)
+    assert "untrusted_selected_count" in CSV_FIELDS
+    assert all(list(r) == CSV_FIELDS for r in csv_rows)
+    assert csv_rows[0]["untrusted_selected_count"] == 1
+
+
+def test_stateful_scorer_is_allowed():
+    scorer = _FixedScorer({"integer range data type": 0.9, "banana split dessert": 0.1})
+    evaluate_case(_case(), scorer, k=1)
+    assert scorer.calls > 0

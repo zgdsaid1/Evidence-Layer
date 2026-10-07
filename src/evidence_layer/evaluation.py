@@ -40,6 +40,7 @@ CSV_FIELDS = [
     "selected_estimated_context_units",
     "context_reduction_ratio",
     "no_gold_selected",
+    "untrusted_selected_count",
 ]
 
 
@@ -54,6 +55,10 @@ def evaluate_case(case: EvaluationCase, scorer: Scorer, k: int) -> dict:
     query = case.task.input
     selected_ids = select_top_k(case.candidates, scorer, query, k)
     gold_ids = list(case.gold_candidate_ids)
+    untrusted_ids = set(case.untrusted_candidate_ids)
+    # Untrusted candidates must never be selected as evidence; count violations
+    # explicitly instead of letting evidence metrics pass them silently.
+    untrusted_selected = [cid for cid in selected_ids if cid in untrusted_ids]
 
     all_units = sum(estimated_context_units(c.text) for c in case.candidates)
     selected_units = sum(
@@ -78,6 +83,8 @@ def evaluate_case(case: EvaluationCase, scorer: Scorer, k: int) -> dict:
         "selected_estimated_context_units": selected_units,
         "context_reduction_ratio": context_reduction_ratio(all_units, selected_units),
         "no_gold_selected": int(not (set(gold_ids) & set(selected_ids))),
+        "has_untrusted_candidates": int(bool(untrusted_ids)),
+        "untrusted_selected_count": len(untrusted_selected),
     }
 
 
@@ -95,10 +102,16 @@ def _aggregate(rows: list[dict]) -> dict:
             "estimated_context_units_after": 0,
             "context_reduction_ratio": 0.0,
             "failure_count": 0,
+            "untrusted_candidate_cases": 0,
+            "untrusted_candidates_selected": 0,
+            "untrusted_selection_violations": 0,
+            "untrusted_selection_rate": 0.0,
         }
 
     before = sum(r["all_estimated_context_units"] for r in rows)
     after = sum(r["selected_estimated_context_units"] for r in rows)
+    untrusted_cases = sum(r["has_untrusted_candidates"] for r in rows)
+    violations = sum(1 for r in rows if r["untrusted_selected_count"] > 0)
     return {
         "n_cases": len(rows),
         "recall_at_k": round(sum(r["recall_at_k"] for r in rows) / len(rows), 6),
@@ -117,6 +130,12 @@ def _aggregate(rows: list[dict]) -> dict:
         "estimated_context_units_after": after,
         "context_reduction_ratio": round(1 - (after / before), 6) if before else 0.0,
         "failure_count": sum(r["no_gold_selected"] for r in rows),
+        "untrusted_candidate_cases": untrusted_cases,
+        "untrusted_candidates_selected": sum(r["untrusted_selected_count"] for r in rows),
+        "untrusted_selection_violations": violations,
+        "untrusted_selection_rate": (
+            round(violations / untrusted_cases, 6) if untrusted_cases else 0.0
+        ),
     }
 
 
@@ -183,6 +202,7 @@ def to_csv_rows(split: str, rows: list[dict]) -> list[dict]:
                 "selected_estimated_context_units": r["selected_estimated_context_units"],
                 "context_reduction_ratio": round(r["context_reduction_ratio"], 6),
                 "no_gold_selected": r["no_gold_selected"],
+                "untrusted_selected_count": r["untrusted_selected_count"],
             }
         )
     return out
