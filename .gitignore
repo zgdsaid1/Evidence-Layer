@@ -31,3 +31,6 @@ reports/
 .env
 .env.*
 !.env.example
+
+# Supabase CLI local link metadata (may contain connection details)
+supabase/.temp/
