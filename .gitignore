@@ -27,3 +27,7 @@ data/test/*.jsonl
 # Phase 2 evaluation reports (regenerate with scripts/run_evaluation.py)
 reports/
 
+# Environment files (templates stay tracked)
+.env
+.env.*
+!.env.example

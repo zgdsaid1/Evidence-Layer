@@ -172,3 +172,29 @@ These are approved target placements; none imply a current deployment.
 - Google Drive OAuth scopes and synchronization model.
 - Whether the Comparison Lab compares lexical against Jev, or other frozen
   configurations, and what user data it stores.
+
+## Platform Deployment Target
+
+This is the target architecture. It is **not implemented yet**: no external
+project exists and nothing is deployed.
+
+```text
+Vercel:
+- Next.js frontend at apps/web
+- production from main
+- preview deployments from PRs later
+
+Supabase:
+- Postgres + pgvector
+- Auth + Storage later
+- migrations are source of truth
+
+Railway:
+- future MCP/HTTP Python service
+- production from main later
+- no deployment until service has health endpoint and auth model
+```
+
+Repository scaffolding for these targets lives in `apps/web`, `supabase/`, and
+`services/evidence-service/`. See
+[ENVIRONMENT_AND_SECRETS.md](ENVIRONMENT_AND_SECRETS.md) for variable handling.
