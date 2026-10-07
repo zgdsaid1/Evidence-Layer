@@ -21,6 +21,13 @@ are not yet implemented or deployed.
   billing, or production connectors exist in this repository.
 - **Current branch:** `phase1/evidence-layer-foundation`.
 
+**In progress:** `LocalCorpusRetriever` (branch `feat/local-corpus-retriever`).
+It reads the local PostgreSQL corpus, selects candidates lexical-first, ranks
+them with the existing `LexicalScorer` and `select_top_k`, then applies
+`budget_words`, which counts `text.split()` words of the selected evidence and
+is not a token count. It is not a production connector and not an MCP server;
+the MCP and retrieval phase is not complete.
+
 The test result is one evaluation on this project's held-out dataset. It is not
 evidence of production readiness, savings, or generalization to customer
 workloads.
