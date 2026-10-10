@@ -151,6 +151,32 @@ def test_unexpected_failure_maps_to_internal_error(monkeypatch):
     assert "/home/secret/token" not in rendered
 
 
+class _FakeResultAttributeFailure:
+    def __init__(self):
+        pass
+
+    def retrieve(self, query, *, top_k=5, budget_words=500):
+        return _ExplodingResult()
+
+
+class _ExplodingResult:
+    @property
+    def status(self):
+        raise RuntimeError("SECRET sk-9876543210 /home/secret/result.jsonl")
+
+
+def test_result_conversion_failure_returns_internal_error(monkeypatch):
+    monkeypatch.setattr(tools_module, "LocalCorpusRetriever", _FakeResultAttributeFailure)
+    result = retrieve_evidence("btree index")
+    assert result == {
+        "error": {"code": "internal_error", "message": "retrieve_evidence failed"}
+    }
+    rendered = repr(result)
+    assert "SECRET" not in rendered
+    assert "sk-9876543210" not in rendered
+    assert "/home/secret/result.jsonl" not in rendered
+
+
 def test_no_network_or_external_imports():
     source = inspect.getsource(tools_module)
     for forbidden in ("typesafe_sdk", "supabase", "requests", "httpx", "urllib", "socket"):

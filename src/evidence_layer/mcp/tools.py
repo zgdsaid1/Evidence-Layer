@@ -78,26 +78,25 @@ def retrieve_evidence(
             top_k=validated_top_k,
             budget_words=validated_budget,
         )
+        return {
+            "status": result.status,
+            "query": result.query,
+            "top_k": result.top_k,
+            "budget_words": result.budget_words,
+            "evidence": [
+                {
+                    "evidence_id": evidence.evidence_id,
+                    "text": evidence.text,
+                    "source_id": evidence.source_id,
+                    "source_url": evidence.source_url,
+                    "section": evidence.section,
+                    "score": evidence.score,
+                    "word_count": evidence.word_count,
+                }
+                for evidence in result.evidence
+            ],
+            "candidate_count": result.candidate_count,
+            "used_words": result.used_words,
+        }
     except Exception:
         return _error("internal_error", "retrieve_evidence failed")
-
-    return {
-        "status": result.status,
-        "query": result.query,
-        "top_k": result.top_k,
-        "budget_words": result.budget_words,
-        "evidence": [
-            {
-                "evidence_id": evidence.evidence_id,
-                "text": evidence.text,
-                "source_id": evidence.source_id,
-                "source_url": evidence.source_url,
-                "section": evidence.section,
-                "score": evidence.score,
-                "word_count": evidence.word_count,
-            }
-            for evidence in result.evidence
-        ],
-        "candidate_count": result.candidate_count,
-        "used_words": result.used_words,
-    }
