@@ -191,15 +191,25 @@ def test_logging_configured_to_stderr():
 
     import evidence_layer.mcp.server as server_mod
 
-    server_mod._configure_logging()
     root = logging.getLogger()
-    stderr_handlers = [
-        handler
-        for handler in root.handlers
-        if isinstance(handler, logging.StreamHandler)
-        and getattr(handler, "stream", None) is sys.stderr
-    ]
-    assert stderr_handlers
+    original_handlers = list(root.handlers)
+    original_level = root.level
+
+    try:
+        server_mod._configure_logging()
+        stderr_handlers = [
+            handler
+            for handler in root.handlers
+            if isinstance(handler, logging.StreamHandler)
+            and getattr(handler, "stream", None) is sys.stderr
+        ]
+        assert stderr_handlers
+    finally:
+        for handler in list(root.handlers):
+            root.removeHandler(handler)
+        for handler in original_handlers:
+            root.addHandler(handler)
+        root.setLevel(original_level)
 
 
 def test_startup_log_goes_to_stderr_not_stdout(server):
