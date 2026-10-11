@@ -54,13 +54,42 @@ User query
 6. Slack or Microsoft Teams.
 7. Relational databases and structured-data sources.
 
-## Optional OpenAI Decisions API routing
+## Intelligence and provider strategy
 
-The OpenAI Decisions API is optional. It may be used as an intelligent router,
-but it costs $0.10 per 1 million input tokens and has no output token charge,
-and it must never replace evidence selection, permission enforcement,
-provenance, auditability, context-budget governance, or safe refusal behavior.
-The local rule-based router must remain the default fallback.
+Evidence-Layer uses a multi-provider intelligence architecture:
+
+```
+User query
+→ Evidence-Layer
+→ JEV evidence core
+→ OpenAI reasoning / decision layer
+→ Grounded answer and citations
+```
+
+- **JEV** is the preferred evidence-scoring and relevance foundation.
+- **OpenAI** is optional and provides advanced reasoning, answer generation,
+  and optional decision-routing capabilities. It must never replace evidence
+  selection, permission enforcement, provenance, auditability, context-budget
+  governance, or safe refusal behavior.
+- **Local lexical scorer** is the guaranteed offline fallback. Core operation
+  must not depend on a single external provider; provider failures must degrade
+  safely to the local lexical core.
+
+For the initial Free and Pro plans, JEV and OpenAI access are platform-managed.
+Users must not add or manage provider API keys.
+
+Pro+ and Enterprise are later capabilities. They may support platform-managed
+JEV or BYOK, OpenAI BYOK, or private deployment as applicable. Any user-provided
+key capability must require strict encryption, tenant isolation, rotation, and
+audit controls.
+
+Platform-managed provider keys must never be exposed to users, clients, MCP
+responses, logs, or browser storage.
+
+Provider errors, API keys, and internal exception details must never be exposed
+in MCP responses or stdout.
+
+The active provider path must be recorded only in non-sensitive metadata.
 
 ## Consequences
 
@@ -73,3 +102,11 @@ The local rule-based router must remain the default fallback.
 - Risk: source-specific ranking differences must be reconciled by the
   fusion/reranking stage; the rule-based router remains the safe default until
   intelligent routing is validated.
+- Better reasoning when OpenAI is available.
+- Continued offline and provider-independent core operation through the local
+  lexical fallback.
+- Operational responsibility for authentication, key rotation, usage metering,
+  rate limits, cost controls, abuse prevention, failover, privacy, and
+  retention when keys are platform-managed.
+- More implementation and evaluation complexity because all provider paths and
+  safe fallback behavior must be tested.

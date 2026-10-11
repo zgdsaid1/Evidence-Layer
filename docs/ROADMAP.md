@@ -15,14 +15,27 @@ retrieval, scoring, selection, provenance, permissions, and context-budget
 governance so agents answer from the smallest reliable evidence set, with
 citations and safe refusal.
 
-## 3. Foundation: JEV
+Platform-managed provider keys must never be exposed to users, clients,
+MCP responses, logs, or browser storage.
 
-Evidence-Layer is built on JEV.
+User-provided keys are a later Pro+ and Enterprise capability, with strict
+encryption, isolation, rotation, and audit requirements.
 
-JEV is the foundational execution and integration layer. Evidence-Layer adds
-evidence retrieval, scoring, selection, provenance, permissions, context-budget
-governance, MCP exposure, and multi-source connector capabilities on top of
-JEV.
+## 3. Intelligence architecture
+
+Evidence-Layer is built on three complementary intelligence layers:
+
+```text
+User query
+→ Evidence-Layer
+→ JEV evidence core
+→ OpenAI reasoning / decision layer
+→ Grounded answer and citations
+```
+
+- **Evidence-Layer** handles evidence retrieval, scoring, selection, provenance, permissions, and context-budget governance.
+- **JEV evidence core** provides relevance scoring over candidate evidence.
+- **OpenAI reasoning / decision layer** optionally reasons over the selected, budgeted evidence to produce a grounded answer with citations.
 
 ## 4. Strategic principle: SaaS is the long-term goal and is built incrementally
 
@@ -87,13 +100,80 @@ SCIM, RBAC, permission inheritance, query-time authorization, incremental sync,
 deletion propagation, audit logs, data residency, billing, admin dashboard,
 evaluation dashboard, and enterprise support.
 
-## 13. Optional intelligent routing using OpenAI Decisions API
+## 13. AI provider strategy
 
-The OpenAI Decisions API is optional, costs $0.10 per 1 million input tokens,
-has no output token charge, and must never replace evidence selection,
-permission enforcement, provenance, auditability, context-budget governance,
-or safe refusal behavior. A local rule-based router must remain the default
-fallback.
+Evidence-Layer uses a multi-provider intelligence architecture:
+
+```text
+User query
+→ Evidence-Layer
+→ JEV evidence core
+→ OpenAI reasoning / decision layer
+→ Grounded answer and citations
+```
+
+JEV is the preferred evidence-scoring and relevance foundation.
+
+OpenAI provides advanced reasoning, answer generation, and optional
+decision-routing capabilities.
+
+The local lexical scorer is the guaranteed offline fallback. It keeps
+Evidence-Layer operational when external providers are unavailable,
+unconfigured, or fail.
+
+### Managed keys
+
+For the initial Free and Pro plans, Evidence-Layer manages JEV and OpenAI
+access on behalf of users.
+
+Users do not add or manage provider API keys.
+
+The platform is responsible for:
+
+- Provider authentication.
+- Key storage and rotation.
+- Usage metering.
+- Rate limits.
+- Cost controls.
+- Abuse prevention.
+- Provider failover.
+- Privacy and retention policies.
+
+### Plan tiers
+
+| Plan | JEV | OpenAI | User API keys | Target user |
+|---|---|---|---|---|
+| Free | Platform-managed | Platform-managed | No | Individual evaluation and light use |
+| Pro | Platform-managed | Platform-managed | No | Regular individual and small-team use |
+| Pro+ | Platform-managed or BYOK | BYOK | Yes | Advanced users needing control |
+| Enterprise | BYOK or private deployment | BYOK or private deployment | Yes | Organizations with compliance needs |
+
+Pro+ and Enterprise are part of the later launch strategy. The initial
+development focus is Free and Pro.
+
+### Provider resilience
+
+The system must never depend on a single external provider for its core
+operation.
+
+```text
+JEV preferred
+→ OpenAI reasoning when available
+→ Local lexical fallback
+```
+
+Provider failures must degrade safely to the local lexical core.
+
+The active provider path must be recorded in non-sensitive metadata.
+
+Provider errors, API keys, and internal exception details must never be
+exposed in MCP responses or stdout.
+
+Platform-managed provider keys must never be exposed to users, clients,
+MCP responses, logs, or browser storage.
+
+User-provided keys are a later Pro+ and Enterprise capability, with strict
+encryption, isolation, rotation, and audit requirements.
 
 ## 14. Differentiating capabilities
 
