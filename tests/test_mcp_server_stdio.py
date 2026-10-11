@@ -173,6 +173,43 @@ def test_stderr_has_no_protocol_output(server):
     assert '"jsonrpc"' not in server.stderr.read()
 
 
+def test_tool_advertises_read_only_and_closed_world_annotations(server):
+    _initialize(server)
+    _notify_initialized(server)
+    response = _request(server, 2, "tools/list", {})
+    tools = response["result"]["tools"]
+    assert [tool["name"] for tool in tools] == ["retrieve_evidence"]
+    annotations = tools[0]["annotations"]
+    assert annotations["readOnlyHint"] is True
+    assert annotations["destructiveHint"] is False
+    assert annotations["openWorldHint"] is False
+    assert "idempotentHint" not in annotations
+
+
+def test_logging_configured_to_stderr():
+    import logging
+
+    import evidence_layer.mcp.server as server_mod
+
+    server_mod._configure_logging()
+    root = logging.getLogger()
+    stderr_handlers = [
+        handler
+        for handler in root.handlers
+        if isinstance(handler, logging.StreamHandler)
+        and getattr(handler, "stream", None) is sys.stderr
+    ]
+    assert stderr_handlers
+
+
+def test_startup_log_goes_to_stderr_not_stdout(server):
+    _initialize(server)
+    _notify_initialized(server)
+    _request(server, 2, "tools/list", {})
+    _shutdown(server)
+    assert "starting evidence layer MCP stdio server" in server.stderr.read()
+
+
 def test_corpus_error_is_returned_as_tool_result(monkeypatch):
     import evidence_layer.mcp.server as server_mod
 
