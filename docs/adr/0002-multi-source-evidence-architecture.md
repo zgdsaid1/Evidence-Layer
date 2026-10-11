@@ -1,4 +1,4 @@
-# 0001 — Multi-source evidence architecture
+# ADR 0002 — Multi-source evidence architecture
 
 - Status: Proposed
 
