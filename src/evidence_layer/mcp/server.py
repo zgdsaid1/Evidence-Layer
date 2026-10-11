@@ -13,13 +13,24 @@ import logging
 import sys
 
 from mcp.server import MCPServer
+from mcp.types import ToolAnnotations
 
 from evidence_layer.mcp.tools import retrieve_evidence
+
+logger = logging.getLogger(__name__)
 
 mcp = MCPServer("Evidence Layer")
 
 
-@mcp.tool(name="retrieve_evidence")
+@mcp.tool(
+    name="retrieve_evidence",
+    annotations=ToolAnnotations(
+        read_only_hint=True,
+        destructive_hint=False,
+        open_world_hint=False,
+        # No idempotency claim is made here.
+    ),
+)
 def retrieve_evidence_tool(
     query: str,
     top_k: int = 5,
@@ -38,9 +49,25 @@ def retrieve_evidence_tool(
         return {"error": {"code": "internal_error", "message": "retrieve_evidence failed"}}
 
 
+def _configure_logging() -> None:
+    """Route all application and library logs to stderr only.
+
+    stdout is reserved exclusively for newline-delimited JSON-RPC, so no log
+    handler may target stdout.
+    """
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    for handler in list(root.handlers):
+        root.removeHandler(handler)
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
+    root.addHandler(handler)
+
+
 def main() -> None:
     """Run the MCP stdio server, routing logs to stderr only."""
-    logging.basicConfig(level=logging.INFO, stream=sys.stderr)
+    _configure_logging()
+    logger.info("starting evidence layer MCP stdio server")
     mcp.run(transport="stdio")
 
 
