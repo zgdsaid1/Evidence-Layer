@@ -32,10 +32,11 @@ not established by the repository's evaluation dataset.
 
 ## MVP Goals
 
-1. Provide an MCP `find_evidence` tool.
+1. Provide an MCP `retrieve_evidence` tool.
 2. Retrieve and rank candidate evidence with the existing lexical scorer as
    default and fallback.
-3. Offer Jev as an explicitly optional scoring layer.
+3. Offer Jev as an optional scoring layer: Jev is the preferred remote provider
+   when configured, with lexical as the deterministic default and fallback.
 4. Store documents, chunks, and usage in Supabase.
 5. Connect Google Drive as the first source connector.
 6. Offer the defined Free and Pro tiers, Stripe subscriptions, and credit
@@ -124,9 +125,11 @@ model, and measurement window for each metric before launch reporting.
 
 The repository has schemas, local lexical ranking, an optional Jev scorer, an
 evaluation harness, and a held-out single-run evaluation whose predeclared
-outcome was Inconclusive. It does not currently implement the hosted product,
-MCP server, database, dashboard, billing, or Google Drive connector. No
-production readiness, savings, or generalization claim is established.
+outcome was Inconclusive. It currently implements a local stdio MCP server
+(`retrieve_evidence`); it does not yet implement the hosted HTTP service,
+authentication, production database, dashboard, billing, or Google Drive
+connector. No production readiness, savings, or generalization claim is
+established.
 
 ## Open Product Decisions
 

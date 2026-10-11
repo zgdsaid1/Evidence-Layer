@@ -14,19 +14,23 @@ are not yet implemented or deployed.
   lexical MAP **0.9735** and Jev MAP **0.9924**. The paired MAP difference was
   **+0.0189**, with 95% CI **[−0.0152, +0.0644]**. The predeclared decision was
   **Inconclusive**. See the [Phase 5A plan](phase5a_heldout_test_evaluation_plan.md)
-  and [Phase 5B report](../reports/phase5b_heldout_test_single_run.json).
-- **Jev is optional, not the default.** The requested model is `jev-latest`;
-  it is an alias and the recorded run returned `jev-1.13.0`.
-- **Product layer is absent:** no MCP server, database, frontend/dashboard,
-  billing, or production connectors exist in this repository.
-- **Current branch:** `phase1/evidence-layer-foundation`.
+  and [Phase 5B report](../reports/phase5b_heldout_test_single_run.json) —
+  historical evaluation-phase numbering, unrelated to the ROADMAP's Phase 5.
+- **Jev is optional, not the default; it is the preferred remote provider when
+  configured.** The requested model is `jev-latest`; it is an alias and the
+  recorded run returned `jev-1.13.0`.
+- **A local stdio MCP server is implemented** and exposes `retrieve_evidence`.
+  The hosted HTTP service, database, frontend/dashboard, billing, and
+  production connectors do not yet exist in this repository.
+- **Current branch:** `docs/product-roadmap` (reconciling docs with `main`).
 
-**In progress:** `LocalCorpusRetriever` (branch `feat/local-corpus-retriever`).
-It reads the local PostgreSQL corpus, selects candidates lexical-first, ranks
-them with the existing `LexicalScorer` and `select_top_k`, then applies
-`budget_words`, which counts `text.split()` words of the selected evidence and
-is not a token count. It is not a production connector and not an MCP server;
-the MCP and retrieval phase is not complete.
+`LocalCorpusRetriever` is implemented. It reads the local PostgreSQL corpus,
+selects candidates lexical-first, ranks them with the existing `LexicalScorer`
+and `select_top_k`, then applies `budget_words`, which counts `text.split()`
+words of the selected evidence and is not a token count. It is not a production
+connector. The local MCP stdio server (`retrieve_evidence`) is also
+implemented; the hosted HTTP service and production retrieval phase are not
+complete.
 
 The test result is one evaluation on this project's held-out dataset. It is not
 evidence of production readiness, savings, or generalization to customer
@@ -58,10 +62,17 @@ connector, usage controls, billing, and an A/B comparison experience.
 
 ## Revised Phases
 
+> **Note:** These implementation phases are historical and are superseded by the
+> canonical product phases in [ROADMAP.md](ROADMAP.md) (Phase 0–6: local MCP
+> foundation, prove value, Comparison Lab, connector contract, Google Drive,
+> SaaS beta, billing and expansion). The names below are retained for history;
+> new work should reference the ROADMAP phases.
+
 ### Phase 1 — MCP server and real retrieval
 
-- Implement a persistent MCP server on Railway.
-- Expose `find_evidence` as the initial tool.
+- A local stdio MCP server exposing `retrieve_evidence` is already implemented.
+- Implement the persistent Railway HTTP MCP server.
+- Expose `retrieve_evidence` as the initial tool.
 - Add a real retrieval pipeline that uses the existing lexical scorer; do not
   rebuild the lexical scorer.
 - Permit optional Jev reranking/scoring, retaining lexical as the default and
@@ -97,7 +108,7 @@ connector, usage controls, billing, and an A/B comparison experience.
 
 ### In scope
 
-- MCP server with a `find_evidence` tool.
+- MCP server with a `retrieve_evidence` tool.
 - Real retrieval using lexical scoring and optional Jev.
 - Supabase storage for documents, chunks, and usage tracking.
 - Google Drive connector.

@@ -17,11 +17,13 @@ schemas, a deterministic lexical scorer, an optional Jev scorer, and a
 held-out evaluation artifact. The held-out comparison was **Inconclusive**;
 lexical remains the default.
 
-The SaaS product layer is not implemented: there is no MCP server, database,
-frontend/dashboard, billing, or real source connector. The planned target
-architecture is Vercel/Next.js for the frontend, Supabase for backend services,
-Railway for the persistent MCP server, and Jev through the optional TypeSafe
-integration. This is a target design, not a description of deployed services.
+A local stdio MCP server (`retrieve_evidence`) is implemented. The hosted SaaS
+product layer is not implemented: no hosted HTTP MCP service, database,
+frontend/dashboard, billing, or production source connector exists. The planned
+target architecture is Vercel/Next.js for the frontend, Supabase for backend
+services, Railway for the persistent HTTP MCP server, and Jev through the
+optional TypeSafe integration. This is a target design, not a description of
+deployed services.
 
 See the living [Development Plan](docs/DEVELOPMENT_PLAN.md),
 [Product Requirements (PRD)](docs/PRD.md), and

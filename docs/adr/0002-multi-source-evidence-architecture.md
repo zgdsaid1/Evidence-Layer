@@ -25,7 +25,9 @@ producing a grounded answer with citations.
 - One normalized evidence schema for every source.
 - A single EvidenceConnector interface for retrieval, routing, timeouts,
   fallbacks, and health.
-- Permission-aware retrieval enforced at query time.
+- Each connector enforces source-native delegated authorization and ACL
+  propagation; the central pipeline enforces normalized tenant policy,
+  query-time authorization, and tenant data isolation.
 - Deterministic evidence selection within an explicit context budget.
 - Provenance and citations preserved end to end.
 - Safe refusal when evidence is insufficient or conflicting.
@@ -46,13 +48,15 @@ User query
 
 ## Connector priorities
 
-1. Local files and uploaded documents.
+1. Google Drive (first production connector).
 2. GitHub repositories.
-3. Google Drive.
-4. Confluence or Notion.
-5. SharePoint.
-6. Slack or Microsoft Teams.
-7. Relational databases and structured-data sources.
+3. Confluence or Notion.
+4. SharePoint.
+5. Slack or Microsoft Teams.
+6. Relational databases and structured-data sources.
+
+Local files and uploaded documents are the local base and are not a production
+source connector.
 
 ## Intelligence and provider strategy
 
@@ -66,14 +70,15 @@ User query
 → Grounded answer and citations
 ```
 
-- **JEV** is the preferred evidence-scoring and relevance foundation.
-- **OpenAI** is optional and provides advanced reasoning, answer generation,
-  and optional decision-routing capabilities. It must never replace evidence
-  selection, permission enforcement, provenance, auditability, context-budget
-  governance, or safe refusal behavior.
-- **Local lexical scorer** is the guaranteed offline fallback. Core operation
-  must not depend on a single external provider; provider failures must degrade
-  safely to the local lexical core.
+- **JEV** is the preferred remote scoring provider when configured and
+  permitted; it is optional and is never required for local core operation.
+- **OpenAI** is an optional reasoning and answer-generation layer, invoked only
+  after retrieval, permission checks, evidence selection, and context
+  budgeting. It must never override source permissions, fabricate evidence or
+  citations, replace evidence selection, or cancel the abstention policy.
+- **Local lexical scorer** is the deterministic default and fallback. Core
+  operation must not depend on a single external provider; provider failures
+  must degrade safely to the local lexical core.
 
 For the initial Free and Pro plans, JEV and OpenAI access are platform-managed.
 Users must not add or manage provider API keys.

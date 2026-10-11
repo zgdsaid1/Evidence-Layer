@@ -75,30 +75,34 @@ Phase 3 defines an EvidenceConnector interface, normalized evidence schema,
 source routing, concurrent connector execution, deduplication, fusion,
 reranking, context-budget allocation, timeouts, fallbacks, and health status.
 
-## 10. Phase 4 — Initial connectors
+## 10. Phase 4 — Google Drive connector
 
-Connector priority is:
+Google Drive is the first production source connector. Connector priority is:
 
-1. Local files and uploaded documents.
+1. Google Drive (first production connector).
 2. GitHub repositories.
-3. Google Drive.
-4. Confluence or Notion.
-5. SharePoint.
-6. Slack or Microsoft Teams.
-7. Relational databases and structured-data sources.
+3. Confluence or Notion.
+4. SharePoint.
+5. Slack or Microsoft Teams.
+6. Relational databases and structured-data sources.
 
-## 11. Phase 5 — First SaaS release
+Local files and uploaded documents are the local base and are not a production
+source connector.
 
-Phase 5 delivers an individual SaaS release with authentication, personal
-workspace, local-file upload, GitHub connection, MCP HTTP endpoint, API keys,
-usage metering, monitoring, and simple billing or free-tier usage limits.
+## 11. Phase 5 — SaaS beta
 
-## 12. Phase 6 — Team and enterprise SaaS
+Phase 5 delivers an individual SaaS beta with authentication, personal
+workspace, local-file upload, Google Drive connection, a hosted MCP HTTP
+endpoint, API keys, usage metering, monitoring, and free-tier usage limits.
+Billing is deferred to Phase 6, after beta reliability and usage economics
+are validated.
 
-Phase 6 delivers team and enterprise SaaS with multi-tenant workspaces, SSO,
-SCIM, RBAC, permission inheritance, query-time authorization, incremental sync,
-deletion propagation, audit logs, data residency, billing, admin dashboard,
-evaluation dashboard, and enterprise support.
+## 12. Phase 6 — Billing and expansion
+
+Phase 6 adds billing and team/enterprise expansion: Stripe subscription
+billing, multi-tenant workspaces, SSO, SCIM, RBAC, permission inheritance,
+query-time authorization, incremental sync, deletion propagation, audit logs,
+data residency, admin dashboard, evaluation dashboard, and enterprise support.
 
 ## 13. AI provider strategy
 
@@ -112,14 +116,17 @@ User query
 → Grounded answer and citations
 ```
 
-JEV is the preferred evidence-scoring and relevance foundation.
+JEV is the preferred remote scoring provider when configured and permitted.
+It is optional and is never required for local core operation.
 
-OpenAI provides advanced reasoning, answer generation, and optional
-decision-routing capabilities.
+OpenAI is an optional reasoning and answer-generation layer. It is invoked
+only after retrieval, permission checks, evidence selection, and context
+budgeting, and it must never override source permissions, fabricate evidence
+or citations, or cancel the abstention policy.
 
-The local lexical scorer is the guaranteed offline fallback. It keeps
-Evidence-Layer operational when external providers are unavailable,
-unconfigured, or fail.
+The local lexical scorer is the deterministic default and fallback. It keeps
+Evidence-Layer operational when external providers are disabled, unconfigured,
+unavailable, or fail.
 
 ### Managed keys
 
@@ -187,9 +194,13 @@ encryption, isolation, rotation, and audit requirements.
 
 ## 15. Non-goals before validation
 
-Google Drive, SharePoint, Slack, multi-tenant SaaS, billing, public cloud
-deployment, enterprise compliance certification, and custom connector
-marketplace are non-goals before Phase 1 and Phase 5 validation.
+- Before Phase 1 validation (the benchmark proves evidence-selection value):
+  Google Drive, GitHub, SharePoint, Slack, multi-tenant SaaS, billing, public
+  cloud deployment, enterprise compliance certification, and custom connector
+  marketplace are non-goals.
+- Billing and public cloud deployment remain non-goals until the SaaS beta
+  (Phase 5) validates reliability and usage economics; they are introduced in
+  Phase 6.
 
 ## 16. Success definition
 
