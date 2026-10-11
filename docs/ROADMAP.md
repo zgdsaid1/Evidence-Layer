@@ -198,9 +198,9 @@ encryption, isolation, rotation, and audit requirements.
   Google Drive, GitHub, SharePoint, Slack, multi-tenant SaaS, billing, public
   cloud deployment, enterprise compliance certification, and custom connector
   marketplace are non-goals.
-- Billing and public cloud deployment remain non-goals until the SaaS beta
-  (Phase 5) validates reliability and usage economics; they are introduced in
-  Phase 6.
+- Billing and broader public-cloud expansion remain non-goals until the SaaS
+  beta (Phase 5) validates reliability and usage economics; they are introduced
+  in Phase 6.
 
 ## 16. Success definition
 

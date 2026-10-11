@@ -100,8 +100,10 @@ The active provider path must be recorded only in non-sensitive metadata.
 
 - Positive: a single evidence contract simplifies connectors, fusion,
   reranking, and governance, and makes retrieval consistent and auditable.
-- Positive: permission, provenance, and budget are enforced in one place, not
-  per connector.
+- Positive: normalized tenant policy, query-time authorization, tenant
+  isolation, provenance, and budget are enforced centrally, not per connector;
+  source-native authorization and ACL enforcement remain each connector's
+  responsibility.
 - Cost: every connector must implement the normalized schema and satisfy
   timeouts, fallbacks, and health reporting.
 - Risk: source-specific ranking differences must be reconciled by the
