@@ -4,8 +4,9 @@
 
 This document describes the **approved target architecture**, not deployed
 infrastructure. The repository currently contains a Python library, local
-evaluation scripts, dataset artifacts, and an optional TypeSafe/Jev scorer. It
-does not contain the SaaS infrastructure described below.
+evaluation scripts, dataset artifacts, an optional TypeSafe/Jev scorer, and a
+local stdio MCP server (`retrieve_evidence`). It does not contain the SaaS
+infrastructure described below.
 
 ## Target System Context
 
@@ -14,7 +15,7 @@ Agent / MCP client
        |
        v
 Railway: persistent MCP server
-  find_evidence tool
+  retrieve_evidence tool
        |
        +---- Supabase: Auth, Postgres, pgvector, Edge Functions
        |       documents, chunks, tenant data, usage
@@ -42,10 +43,11 @@ document data or scorer behavior.
 - Current `DocumentationRAGAdapter` is a no-op/greedy baseline; it is not a
   production retrieval service.
 
-### Railway MCP server (planned)
+### MCP server
 
-- Run as a persistent service hosting the MCP protocol.
-- Expose `find_evidence` as the first tool.
+- A local stdio MCP server is implemented and exposes `retrieve_evidence`.
+- The persistent Railway HTTP service is planned; it will host the same MCP
+  protocol and `retrieve_evidence` tool.
 - Authenticate/authorize the caller and establish tenant context.
 - Validate requests, invoke retrieval and scoring, enforce usage limits, and
   return sanitized results.
@@ -81,6 +83,8 @@ document data or scorer behavior.
 
 ### Jev / TypeSafe (optional)
 
+- Jev is the preferred remote scoring provider when configured and
+  permitted; it is optional and never required for local core operation.
 - Call TypeSafe only from a server-side boundary when Jev is enabled and
   permitted by plan and request policy.
 - Requested model defaults to `jev-latest`; record the provider-returned model
@@ -89,6 +93,15 @@ document data or scorer behavior.
 - On disabled provider, dependency failure, or request failure, preserve the
   lexical path and report provider failure safely; never disguise failure as a
   valid score.
+
+### OpenAI reasoning layer (optional, planned)
+
+- An optional cloud reasoning layer invoked only after retrieval, permission
+  checks, evidence selection, and context budgeting.
+- It produces a grounded answer and citations; it must never override source
+  permissions, fabricate evidence or citations, or cancel the abstention
+  policy.
+- A local rule-based path remains the default when OpenAI is not enabled.
 
 ### Stripe billing (planned)
 
@@ -100,7 +113,7 @@ document data or scorer behavior.
 
 ## Request and Data Flow (Target)
 
-1. MCP client calls `find_evidence` with a task and candidate/source context.
+1. MCP client calls `retrieve_evidence` with a task and candidate/source context.
 2. MCP service authenticates the caller and derives tenant authorization.
 3. Retrieval queries only that tenant's authorized indexed content.
 4. Lexical scoring ranks candidates by default. If optional Jev is enabled and
