@@ -97,6 +97,8 @@ def retrieve_evidence(
             ],
             "candidate_count": result.candidate_count,
             "used_words": result.used_words,
+            "scoring_provider": result.scoring_provider,
+            "scoring_failure_category": result.scoring_failure_category,
         }
     except Exception:
         return _error("internal_error", "retrieve_evidence failed")
