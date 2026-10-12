@@ -31,6 +31,8 @@ SUCCESS_KEYS = {
     "evidence",
     "candidate_count",
     "used_words",
+    "scoring_provider",
+    "scoring_failure_category",
 }
 
 

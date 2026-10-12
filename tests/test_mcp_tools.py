@@ -21,6 +21,8 @@ SUCCESS_KEYS = {
     "evidence",
     "candidate_count",
     "used_words",
+    "scoring_provider",
+    "scoring_failure_category",
 }
 
 EVIDENCE_KEYS = {
@@ -43,6 +45,8 @@ def test_valid_retrieval_success_contract():
     assert result["budget_words"] == 500
     assert isinstance(result["candidate_count"], int)
     assert isinstance(result["used_words"], int)
+    assert result["scoring_provider"] == "lexical"
+    assert result["scoring_failure_category"] is None
     assert result["evidence"]
     assert len(result["evidence"]) <= result["top_k"]
     assert result["used_words"] <= result["budget_words"]
@@ -129,6 +133,40 @@ def test_corpus_failure_maps_to_corpus_unavailable(monkeypatch):
             "message": "local corpus is unavailable",
         }
     }
+
+
+def test_jev_fallback_metadata_is_reported_without_provider_error_body(monkeypatch):
+    from evidence_layer.scoring.jev import JevProviderError
+    from evidence_layer.scoring.policy import build_provider_selection_policy
+
+    secret = "SYNTHETIC_SECRET_PROVIDER_BODY"
+
+    class FailingScorer:
+        name = "jev"
+
+        def score(self, query, text):
+            raise JevProviderError(secret)
+
+    real_retriever = tools_module.LocalCorpusRetriever
+
+    def retriever_with_failing_jev():
+        return real_retriever(
+            scoring_policy=build_provider_selection_policy(
+                jev_enabled=True,
+                jev_permitted_by_request=True,
+                jev_permitted_by_plan=True,
+                jev_scorer=FailingScorer(),
+            )
+        )
+
+    monkeypatch.setattr(
+        tools_module, "LocalCorpusRetriever", retriever_with_failing_jev
+    )
+    result = retrieve_evidence("btree index")
+
+    assert result["scoring_provider"] == "lexical"
+    assert result["scoring_failure_category"] == "provider_failure"
+    assert secret not in repr(result)
 
 
 class _FakeInternalFailure:

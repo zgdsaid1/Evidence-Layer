@@ -23,8 +23,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from evidence_layer.schemas import EvidenceCandidate
+from evidence_layer.scoring.policy import ProviderSelectionPolicy, ScoringOutcome
 from evidence_layer.scoring.lexical import LexicalScorer
-from evidence_layer.selection import select_top_k
+from evidence_layer.selection import select_top_k_scored
 
 DEFAULT_CORPUS_PATH = (
     Path(__file__).resolve().parents[3] / "data" / "corpus" / "postgresql_passages.jsonl"
@@ -59,6 +60,8 @@ class LocalRetrievalResult:
     evidence: list[LocalEvidence] = field(default_factory=list)
     candidate_count: int = 0
     used_words: int = 0
+    scoring_provider: str = "lexical"
+    scoring_failure_category: str | None = None
 
 
 def _require_positive_int(name: str, value: object) -> int:
@@ -72,8 +75,14 @@ def _require_positive_int(name: str, value: object) -> int:
 class LocalCorpusRetriever:
     """Retrieve ranked, budgeted evidence from a local JSONL corpus."""
 
-    def __init__(self, corpus_path: Path | str = DEFAULT_CORPUS_PATH) -> None:
-        self._scorer = LexicalScorer()
+    def __init__(
+        self,
+        corpus_path: Path | str = DEFAULT_CORPUS_PATH,
+        *,
+        scoring_policy: ProviderSelectionPolicy | None = None,
+    ) -> None:
+        self._scoring_policy = scoring_policy or ProviderSelectionPolicy()
+        self._retrieval_scorer = LexicalScorer()
         self._records = self._load(Path(corpus_path))
 
     @staticmethod
@@ -95,7 +104,7 @@ class LocalCorpusRetriever:
         return records
 
     def _retrieve_candidates(self, query: str) -> list[EvidenceCandidate]:
-        query_tokens = set(self._scorer.normalize(query))
+        query_tokens = set(self._retrieval_scorer.normalize(query))
         if not query_tokens:
             return []
         return [
@@ -106,16 +115,30 @@ class LocalCorpusRetriever:
                 text=rec["text"],
             )
             for rec in self._records.values()
-            if query_tokens & set(self._scorer.normalize(rec["text"]))
+            if query_tokens & set(self._retrieval_scorer.normalize(rec["text"]))
         ]
 
-    def _rank(self, candidates: list[EvidenceCandidate], query: str) -> list[str]:
-        if not candidates:
-            return []
-        return select_top_k(candidates, self._scorer, query, len(candidates))
+    def _rank(
+        self, candidates: list[EvidenceCandidate], query: str
+    ) -> tuple[list[str], dict[str, float], ScoringOutcome]:
+        outcome = self._scoring_policy.score(
+            query, [candidate.text for candidate in candidates]
+        )
+        ranked_ids = select_top_k_scored(
+            candidates, outcome.scores, len(candidates) or 1
+        ) if candidates else []
+        scores_by_id = {
+            candidate.candidate_id: score
+            for candidate, score in zip(candidates, outcome.scores)
+        }
+        return ranked_ids, scores_by_id, outcome
 
     def _apply_budget(
-        self, ranked_ids: list[str], query: str, top_k: int, budget_words: int
+        self,
+        ranked_ids: list[str],
+        scores_by_id: dict[str, float],
+        top_k: int,
+        budget_words: int,
     ) -> list[LocalEvidence]:
         selected: list[LocalEvidence] = []
         remaining = budget_words
@@ -134,7 +157,7 @@ class LocalCorpusRetriever:
                     source_id=rec["source_id"],
                     source_url=rec["source_url"],
                     section=rec.get("section"),
-                    score=self._scorer.score(query, rec["text"]),
+                    score=scores_by_id[passage_id],
                     word_count=words,
                 )
             )
@@ -152,8 +175,10 @@ class LocalCorpusRetriever:
         _require_positive_int("budget_words", budget_words)
 
         candidates = self._retrieve_candidates(query)
-        ranked_ids = self._rank(candidates, query)
-        evidence = self._apply_budget(ranked_ids, query, top_k, budget_words)
+        ranked_ids, scores_by_id, scoring_outcome = self._rank(candidates, query)
+        evidence = self._apply_budget(
+            ranked_ids, scores_by_id, top_k, budget_words
+        )
 
         if evidence:
             status = STATUS_OK
@@ -169,4 +194,10 @@ class LocalCorpusRetriever:
             evidence=evidence,
             candidate_count=len(candidates),
             used_words=sum(e.word_count for e in evidence),
+            scoring_provider=scoring_outcome.provider,
+            scoring_failure_category=(
+                scoring_outcome.fallback_reason.category
+                if scoring_outcome.fallback_reason is not None
+                else None
+            ),
         )
