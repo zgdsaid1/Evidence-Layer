@@ -23,19 +23,46 @@ encryption, isolation, rotation, and audit requirements.
 
 ## 3. Intelligence architecture
 
-Evidence-Layer is built on three complementary intelligence layers:
+Evidence-Layer has separate routing, evidence-scoring, and answer-generation
+responsibilities:
 
 ```text
 User query
-→ Evidence-Layer
-→ JEV evidence core
-→ OpenAI reasoning / decision layer
-→ Grounded answer and citations
+→ Trusted authorization-filtered source catalog
+→ OpenAI Decisions API (complex source routing; planned)
+→ Authorized source retrieval
+→ JEV evidence scoring (only when policy allows and transfer is authorized)
+→ Lexical whole-request scoring fallback on JEV failure
+→ Caller’s model generates the final answer
 ```
 
-- **Evidence-Layer** handles evidence retrieval, scoring, selection, provenance, permissions, and context-budget governance.
-- **JEV evidence core** provides relevance scoring over candidate evidence.
-- **OpenAI reasoning / decision layer** optionally reasons over the selected, budgeted evidence to produce a grounded answer with citations.
+- **OpenAI Decisions API** analyzes complex queries and selects a routing
+  strategy and candidate sources from a trusted, authorization-filtered catalog.
+  It does not score/rank evidence or generate answers. Simple queries may be
+  routed deterministically without a Decisions call.
+- **JEV** is the intended primary evidence-scoring and ranking provider only
+  when explicitly enabled and permitted by policy.
+- **Lexical** is the deterministic whole-request fallback when JEV scoring
+  fails; partial provider scores are never mixed.
+- **The caller's model** generates the final answer.
+- **Evidence-Layer** returns selected/ranked evidence, provenance, and relevant
+  metadata for the caller's model.
+
+The source router and Decisions API client are planned, not implemented. Build
+the authorized source catalog before routing and re-enforce authorization before
+source access. Permission to access a source does not authorize transferring
+query text to Decisions. The trusted server must have valid, explicit
+authorization for that specific provider transfer before sending the query. If
+authorization is absent, unclear, or invalid, do not call Decisions. Deterministic
+routing may proceed without a Decisions call only when both the route and
+eligible source set can be established safely and independently authorized.
+If they cannot, stop rather than guessing, broadening access, or bypassing
+authorization. Minimize the query and source metadata sent for routing; never
+send complete source documents. Router and Decisions output cannot add sources,
+grant permissions, bypass tenant boundaries, or authorize external transfers.
+Decisions unavailability, timeout, or invalid output uses the same safe
+deterministic fallback. This routing fallback is separate from evidence-scoring
+fallback.
 
 ## 4. Strategic principle: SaaS is the long-term goal and is built incrementally
 
@@ -51,10 +78,13 @@ relative to cost and latency.
 
 ## 6. Phase 0 — Reliable MCP foundation
 
-A deterministic, fully-local MCP server that exposes the existing evidence core
-as a single read-only tool over stdio, with strict validation, safe errors,
-deterministic ranking, tool annotations, and logs on stderr only. This phase
-ships the MCP stdio server that has already been built and validated.
+The implemented standard local MCP path is deterministic and uses lexical
+scoring because it constructs `LocalCorpusRetriever()` without injecting a JEV
+policy. Other local-retriever configurations may inject a remote JEV provider
+only behind a trusted, appropriately scoped authorization boundary. The
+foundation exposes the existing evidence core as a single read-only tool over
+stdio, with strict validation, safe errors, deterministic ranking, tool
+annotations, and logs on stderr only.
 
 ## 7. Phase 1 — Prove evidence-selection value
 
@@ -71,9 +101,10 @@ A, B, Tie, Both bad.
 
 ## 9. Phase 3 — Multi-source evidence architecture
 
-Phase 3 defines an EvidenceConnector interface, normalized evidence schema,
-source routing, concurrent connector execution, deduplication, fusion,
-reranking, context-budget allocation, timeouts, fallbacks, and health status.
+Phase 3 defines the connector interface and normalized evidence schema. Source
+routing, including the planned selective Decisions API router and deterministic
+routing fallback, is a separate responsibility from JEV evidence scoring,
+whole-request lexical scoring fallback, and caller-owned final answer generation.
 
 ## 10. Phase 4 — Google Drive connector
 
@@ -91,47 +122,75 @@ source connector.
 
 ## 11. Phase 5 — SaaS beta
 
-Phase 5 delivers an individual SaaS beta with authentication, personal
-workspace, local-file upload, Google Drive connection, a hosted MCP HTTP
-endpoint, API keys, usage metering, monitoring, and free-tier usage limits.
-Billing is deferred to Phase 6, after beta reliability and usage economics
-are validated.
+Phase 5 delivers an individual SaaS beta with authentication and mandatory
+per-user tenant isolation that protects each user's data, a personal workspace,
+local-file upload, Google Drive connection, a hosted MCP HTTP endpoint, API
+keys, usage metering, monitoring, and free-tier usage limits. Usage metering and
+safety limits do not imply payment collection. Billing is deferred to Phase 6,
+after beta reliability and usage economics are validated.
 
 ## 12. Phase 6 — Billing and expansion
 
-Phase 6 adds billing and team/enterprise expansion: Stripe subscription
-billing, multi-tenant workspaces, SSO, SCIM, RBAC, permission inheritance,
-query-time authorization, incremental sync, deletion propagation, audit logs,
-data residency, admin dashboard, evaluation dashboard, and enterprise support.
+Phase 6 adds Stripe subscription billing, payments, and credit packs, plus
+advanced team management, multi-user workspaces, and broader collaboration and
+enterprise capabilities. These build on, and do not defer, Phase 5 per-user
+tenant isolation. Phase 6 capabilities include SSO, SCIM, advanced RBAC and
+permission inheritance for shared workspaces, incremental sync, deletion
+propagation, audit logs, data residency, admin and evaluation dashboards, and
+enterprise support.
 
 ## 13. AI provider strategy
 
-Evidence-Layer uses a multi-provider intelligence architecture:
+The approved architecture separates routing intelligence, evidence scoring,
+deterministic fallback, and final answer generation:
 
 ```text
 User query
-→ Evidence-Layer
-→ JEV evidence core
-→ OpenAI reasoning / decision layer
-→ Grounded answer and citations
+→ Trusted authorization-filtered source catalog
+→ OpenAI Decisions API (complex source routing only; planned)
+→ Authorized source retrieval
+→ JEV (primary scorer only when policy and transfer authorization permit)
+→ Lexical (whole-request fallback only if JEV scoring fails)
+→ Caller’s model (final answer generation)
 ```
 
-JEV is the preferred remote scoring provider when configured and permitted.
-It is optional and is never required for local core operation.
+JEV is the intended primary evidence-scoring and ranking provider only when
+explicitly enabled and permitted by policy. Before transferring query or
+candidate text to JEV, the trusted server must separately authorize that
+provider transfer and minimize the data sent. Source access does not authorize
+the transfer; if transfer authorization is absent or unclear, do not send the
+data. On any JEV failure—including provider errors, timeouts, missing,
+malformed, invalid, or incomplete scores, or output that fails validation—
+recompute the entire candidate set lexically. Never mix JEV and lexical scores
+or rankings. The final answer remains the caller model's responsibility.
 
-OpenAI is an optional reasoning and answer-generation layer. It is invoked
-only after retrieval, permission checks, evidence selection, and context
-budgeting, and it must never override source permissions, fabricate evidence
-or citations, or cancel the abstention policy.
+OpenAI Decisions API is the required routing-intelligence component for
+complex source-routing decisions; the future routing policy may use
+deterministic routing for simple queries. Filter the trusted source catalog by
+authorization before any Decisions call and independently re-enforce
+authorization before source access. Decisions cannot add sources, grant or
+expand permissions, bypass tenant boundaries, or authorize provider transfers.
+Permission to access a source does not authorize transferring query text to
+Decisions. The trusted server must have valid, explicit authorization for that
+specific provider transfer before sending the query. If authorization is absent,
+unclear, or invalid, do not call Decisions. Deterministic routing may proceed
+without a Decisions call only when both the route and eligible source set can be
+established safely and independently authorized. If they cannot, stop rather
+than guessing, broadening access, or bypassing authorization. Minimize the query
+and source metadata sent for routing; never send complete source documents.
+Decisions unavailability, timeout, or invalid output uses the same safe
+deterministic fallback. This is distinct from JEV's lexical scoring fallback.
 
-The local lexical scorer is the deterministic default and fallback. It keeps
-Evidence-Layer operational when external providers are disabled, unconfigured,
-unavailable, or fail.
+The source router and Decisions API client do not yet exist. Their
+authorization-filtered catalog, selective call policy, minimal input, validated
+output, deterministic fallback, and fake-based tests are planned separately
+from the current PR #12 JEV provider-selection scope.
 
 ### Managed keys
 
-For the initial Free and Pro plans, Evidence-Layer manages JEV and OpenAI
-access on behalf of users.
+Provider credentials, when used, remain server-side and are not exposed to
+users. Future Decisions API credentials are managed independently from JEV
+scoring credentials.
 
 Users do not add or manage provider API keys.
 
@@ -148,28 +207,33 @@ The platform is responsible for:
 
 ### Plan tiers
 
-| Plan | JEV | OpenAI | User API keys | Target user |
+| Plan | JEV scoring | Decisions routing | User API keys | Target user |
 |---|---|---|---|---|
 | Free | Platform-managed | Platform-managed | No | Individual evaluation and light use |
 | Pro | Platform-managed | Platform-managed | No | Regular individual and small-team use |
 | Pro+ | Platform-managed or BYOK | BYOK | Yes | Advanced users needing control |
 | Enterprise | BYOK or private deployment | BYOK or private deployment | Yes | Organizations with compliance needs |
 
-Pro+ and Enterprise are part of the later launch strategy. The initial
-development focus is Free and Pro.
+Pro+ and Enterprise are part of the later launch strategy. The initial product
+focus is Free and Pro, but the Phase 5 beta uses free-tier limits; paid Pro
+billing begins in Phase 6.
 
 ### Provider resilience
 
 The system must never depend on a single external provider for its core
 operation.
 
+Routing and scoring have separate failure paths:
+
 ```text
-JEV preferred
-→ OpenAI reasoning when available
-→ Local lexical fallback
+Complex routing: Decisions API → deterministic routing fallback
+Evidence scoring: JEV → whole-request lexical scoring fallback
+Final answer: caller's model
 ```
 
-Provider failures must degrade safely to the local lexical core.
+Decisions is required for complex routing in the target architecture, but the
+routing policy need not call it for every query. A routing fallback does not
+trigger or alter the JEV scoring policy.
 
 The active provider path must be recorded in non-sensitive metadata.
 

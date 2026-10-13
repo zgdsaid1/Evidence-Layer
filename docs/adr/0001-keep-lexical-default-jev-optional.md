@@ -3,6 +3,10 @@
 ## Status
 Accepted
 
+Historical supersession note
+
+ADR 0002 supersedes this decision as current architecture guidance. This ADR remains the historical record of the lexical-default/JEV-optional decision accepted at the time and the evaluation context and evidence supporting it.
+
 ## Context
 
 - The Evidence Layer ranks candidate evidence for a task query.

@@ -8,27 +8,41 @@ are not yet implemented or deployed.
 ## Current Status
 
 - **Scientific/evaluation core is implemented:** provider-agnostic schemas,
-  deterministic lexical scoring, candidate selection, evaluation metrics and
-  harness, dataset validation, and an optional Jev scorer.
-- **Lexical is the default scorer.** The committed single held-out run measured
-  lexical MAP **0.9735** and Jev MAP **0.9924**. The paired MAP difference was
+  deterministic lexical scoring and candidate selection, evaluation metrics
+  and harness, dataset validation, and a JEV scorer behind provider-selection
+  policy.
+- **The committed historical held-out run** measured lexical MAP **0.9735** and
+  JEV MAP **0.9924**. The paired MAP difference was
   **+0.0189**, with 95% CI **[−0.0152, +0.0644]**. The predeclared decision was
   **Inconclusive**. See the [Phase 5A plan](phase5a_heldout_test_evaluation_plan.md)
   and [Phase 5B report](../reports/phase5b_heldout_test_single_run.json) —
   historical evaluation-phase numbering, unrelated to the ROADMAP's Phase 5.
-- **Jev is optional, not the default; it is the preferred remote provider when
-  configured.** The requested model is `jev-latest`; it is an alias and the
-  recorded run returned `jev-1.13.0`.
+- **Approved architecture:** JEV is the intended primary evidence-scoring and
+  ranking provider only when explicitly enabled and permitted by policy; retain
+  the policy gates and whole-request lexical fallback. The historical
+  evaluation decision in ADR 0001 is superseded as
+  architecture guidance, while its measurements remain historical.
 - **A local stdio MCP server is implemented** and exposes `retrieve_evidence`.
-  The hosted HTTP service, database, frontend/dashboard, billing, and
-  production connectors do not yet exist in this repository.
-- **Current branch:** `docs/product-roadmap` (reconciling docs with `main`).
+  The hosted HTTP service, hosted authentication and tenant-isolation
+  enforcement, production database/RLS, hosted provider-transfer authorization,
+  frontend/dashboard, billing, production connectors, source router, and
+  Decisions API client do not yet exist in this repository. Final answer
+  generation remains with the caller's model.
+
+A separate local FastAPI health-only skeleton exposes only `GET /healthz`. It
+requires no application configuration and has no customer operations, evidence
+retrieval, source routing, database, JEV, Decisions, or other provider calls.
+It is not the hosted HTTP MCP service and is not deployed.
 
 `LocalCorpusRetriever` is implemented. It reads the local PostgreSQL corpus,
-selects candidates lexical-first, ranks them with the existing `LexicalScorer`
-and `select_top_k`, then applies `budget_words`, which counts `text.split()`
-words of the selected evidence and is not a token count. It is not a production
-connector. The local MCP stdio server (`retrieve_evidence`) is also
+selects candidates with lexical overlap, scores and ranks them through the
+provider-selection policy, then applies `budget_words`, which counts
+`text.split()` words of the selected evidence and is not a token count. It is
+not a production connector. Its default policy and standard MCP path are
+lexical-only; an injected remote JEV provider can make local-corpus retrieval
+use the network. The standard MCP path remains lexical-only; remote scoring is
+permitted only behind a trusted, appropriately scoped authorization boundary.
+The local MCP stdio server (`retrieve_evidence`) is
 implemented; the hosted HTTP service and production retrieval phase are not
 complete.
 
@@ -41,14 +55,45 @@ workloads.
 This is the intended architecture, not infrastructure already present in the
 repository:
 
-- **Vercel:** Frontend implemented with a Next.js dashboard.
+- **Vercel:** Planned Next.js dashboard; it is not implemented.
 - **Supabase:** Backend services using Postgres, pgvector, Auth, and Edge
   Functions.
 - **Railway:** Persistent MCP server process only.
-- **Jev:** Optional TypeSafe-backed scoring layer, isolated behind a scorer
-  boundary.
-- **Lexical:** Always the default and the fallback when Jev is disabled or
-  unavailable.
+- **JEV:** Intended primary TypeSafe-backed evidence-scoring and ranking
+  provider only when explicitly enabled and permitted by policy. Before sending
+  query or candidate text, the trusted server must separately authorize that
+  provider transfer and minimize the data sent. Source access alone does not
+  authorize transfer; if authorization is absent or unclear, do not send the
+  data.
+- **Lexical:** On any JEV failure—including provider errors, timeouts, missing,
+  malformed, invalid, or incomplete scores, or results that fail validation—
+  recompute the entire candidate set lexically. Never mix JEV and lexical
+  scores or rankings.
+- **OpenAI Decisions API:** Required routing intelligence for complex source
+  routing only. The future router may route simple queries deterministically.
+  Filter the trusted source catalog before routing and re-enforce source
+  authorization before access. Before transferring query text to Decisions,
+  require separate trusted server-side authorization and send only minimum
+  query/source metadata, never documents. Router and Decisions cannot add
+  sources, grant permissions, bypass tenant boundaries, or authorize transfers.
+  Deterministic fallback on unavailable, timed-out, or invalid Decisions output
+  may select only safely eligible, authorized sources; if none can be
+  established, stop rather than widening access.
+- **Evidence output:** Returns selected/ranked evidence, provenance, and
+  relevant metadata to the caller.
+- **Final answers:** Generated by the caller's model, not by this service.
+
+Delivery phasing follows the canonical [ROADMAP.md](ROADMAP.md): Phase 5
+requires mandatory per-user tenant isolation and protection of each user's
+data. Phase 6 adds advanced team management, workspaces, broader collaboration,
+and billing; it does not defer the Phase 5 isolation requirement. Phase 5 usage
+metering and free-tier safety limits are separate from payment collection.
+
+The source router and Decisions API client are planned work, not implemented.
+Their separate future scope is authorization-filtered catalog construction,
+selective routing policy, minimal metadata serialization, Decisions output
+validation, deterministic routing fallback, and isolated fake-based tests.
+Keep that scope separate from PR #12's JEV provider-selection policy.
 
 See [Architecture](ARCHITECTURE.md) for boundaries and the planned request
 flow.
@@ -73,10 +118,8 @@ connector, usage controls, billing, and an A/B comparison experience.
 - A local stdio MCP server exposing `retrieve_evidence` is already implemented.
 - Implement the persistent Railway HTTP MCP server.
 - Expose `retrieve_evidence` as the initial tool.
-- Add a real retrieval pipeline that uses the existing lexical scorer; do not
-  rebuild the lexical scorer.
-- Permit optional Jev reranking/scoring, retaining lexical as the default and
-  always-available fallback.
+- Add a retrieval pipeline using JEV as the primary evidence scorer, retaining
+  whole-request lexical fallback under the provider-selection policy.
 - Keep request validation, safe errors, and provider-independent core
   interfaces.
 
@@ -101,25 +144,31 @@ connector, usage controls, billing, and an A/B comparison experience.
 - Add a Comparison Lab with a controlled “Run A/B” experience.
 - Show scorer outcomes and operational usage with explicit experimental
   limitations.
-- Prepare and run a bounded beta only after privacy, reliability, billing,
-  support, and rollback requirements are met.
+- Prepare and run a bounded beta only after privacy, reliability, support, and
+  rollback requirements are met. Under the canonical roadmap, Phase 5 beta
+  precedes Phase 6 billing.
 
 ## MVP Scope
 
 ### In scope
 
 - MCP server with a `retrieve_evidence` tool.
-- Real retrieval using lexical scoring and optional Jev.
+- Real retrieval using JEV evidence scoring with whole-request lexical fallback.
+- Complex source routing through the planned Decisions API router; router
+  implementation is not in the current PR scope.
 - Supabase storage for documents, chunks, and usage tracking.
 - Google Drive connector.
-- Free plan: **500 requests** and **200K Jev tokens**.
-- Pro plan: **$19/month**, **3,000 requests**, and **2M Jev tokens**.
-- Stripe billing and **$5 credit packs**.
+- Phase 5 free-tier usage targets: **500 requests** and **200K JEV tokens**;
+  usage limits and metering do not imply payment collection.
 - Comparison Lab with “Run A/B”.
 
 Plan quota values are product requirements, not current implemented limits.
 Their billing period, overage behavior, token accounting, and credit
 consumption semantics must be specified before implementation.
+
+Paid Pro, Stripe subscription billing, and **$5 credit packs** are Phase 6
+targets under the canonical roadmap, outside the Phase 5 beta MVP. Their
+pricing, periods, and accounting rules remain open product decisions.
 
 ### Out of scope
 
@@ -143,8 +192,8 @@ instrumentation before using these targets to judge a launch.
 
 ## Risks and Mitigations
 
-- **Jev API changes:** isolate the integration behind an abstraction, test the
-  optional boundary, and preserve lexical fallback.
+- **JEV API changes:** isolate the provider behind the selection policy, test
+  failure handling, and preserve whole-request lexical fallback.
 - **Scope creep:** keep the explicit MVP and out-of-scope lists current; require
   a deliberate scope decision for additions.
 - **Product scope ambiguity:** treat the intended outcome as an integrated
@@ -160,9 +209,10 @@ instrumentation before using these targets to judge a launch.
 ## Open Decisions
 
 - Use **Meilisearch** or **Postgres full-text search** for lexical retrieval?
-- Launch the beta **without billing** or **with billing**?
-- Define request quota periods, Jev-token metering, overage behavior, and
-  $5-credit-pack consumption.
+- Define the selective Decisions routing policy, trusted source metadata, and
+  deterministic routing fallback separately from JEV scoring policy.
+- Define request quota periods, JEV-token metering, separate Decisions-routing
+  cost limits, overage behavior, and $5-credit-pack consumption.
 - Define the Comparison Lab experiment semantics and safe handling of
   customer-provided content.
 

@@ -7,23 +7,46 @@ The layer receives a **task** and a set of **candidate evidence passages**, then
 selects the smallest reliable evidence set, reduces context size, and recommends
 whether the agent should **answer**, **abstain**, or **escalate**.
 
-> This is **Phase 1**: the general foundation plus a reproducible evaluation
-> dataset. It is a *separate, independent project* (not EMORA).
+> The current repository provides the local evidence foundation and a
+> reproducible evaluation dataset. See [the canonical roadmap](docs/ROADMAP.md)
+> for delivery phase numbering. This is a *separate, independent project* (not
+> EMORA).
 
 ## Current Status
 
-The repository contains a tested Python evidence-ranking and evaluation core:
-schemas, a deterministic lexical scorer, an optional Jev scorer, and a
-held-out evaluation artifact. The held-out comparison was **Inconclusive**;
-lexical remains the default.
+The approved target architecture makes JEV the intended primary evidence
+scorer only when explicitly enabled and permitted by policy. On any JEV failure
+or invalid/incomplete score, the entire candidate set is recomputed lexically;
+JEV and lexical rankings are never mixed. In the current runtime, JEV remains
+gated by the existing provider-selection policy, configuration, and permission
+checks; it is not enabled on every execution path. The standard MCP/stdio path
+remains lexical-only; remote scoring requires a trusted, appropriately scoped
+authorization boundary. The historical held-out comparison was
+**Inconclusive**.
 
 A local stdio MCP server (`retrieve_evidence`) is implemented. The hosted SaaS
-product layer is not implemented: no hosted HTTP MCP service, database,
-frontend/dashboard, billing, or production source connector exists. The planned
+product layer is not implemented: there is no hosted HTTP MCP service, hosted
+authentication, per-user tenant-isolation enforcement, database/RLS, hosted
+provider-transfer authorization, frontend/dashboard, billing, or production
+source connector. A separate local FastAPI health-only skeleton exposes only
+`GET /healthz`; it is not deployed and cannot serve customer data. The planned
 target architecture is Vercel/Next.js for the frontend, Supabase for backend
-services, Railway for the persistent HTTP MCP server, and Jev through the
-optional TypeSafe integration. This is a target design, not a description of
-deployed services.
+services, Railway for the persistent HTTP MCP server, JEV for evidence scoring,
+and the OpenAI Decisions API for complex source routing. The source router and
+Decisions client are planned work and do not exist yet. This is a target design,
+not a description of deployed services. Decisions is required for complex
+routing; simple queries may route deterministically. Router and Decisions can
+select only from the authorized source catalog and cannot grant permissions,
+bypass tenant boundaries, or authorize external transfers. If Decisions is
+unavailable, times out, or returns invalid output, deterministic fallback may
+use only safely eligible, authorized sources; otherwise stop safely. Final
+answer generation remains the caller's model responsibility; Evidence Layer
+returns selected/ranked evidence, provenance, and relevant metadata.
+
+In the target design, source-access permission does not authorize transferring
+query or candidate text to an external provider. The future trusted server must
+separately authorize each Decisions or JEV transfer, minimize the data sent, and
+fail closed if authorization is absent or unclear.
 
 See the living [Development Plan](docs/DEVELOPMENT_PLAN.md),
 [Product Requirements (PRD)](docs/PRD.md), and
@@ -49,10 +72,14 @@ Future target domains include (not implemented yet):
 - research and academic evidence
 - invoices and procurement matching
 
-Phase 1 builds only the **general core** and **adapter interfaces**, and starts
-with one domain: **technical documentation / RAG evidence**.
+The original Phase 1 built only the **general core** and **adapter interfaces**,
+and started with one domain: **technical documentation / RAG evidence**. Current
+delivery phase names are defined in the canonical roadmap.
 
-## 2. Phase 1 scope and strict non-goals
+## 2. Historical Phase 1 scope and strict non-goals
+
+This section records the original Phase 1 boundaries, not the current approved
+provider architecture described in Current Status and the architecture docs.
 
 **In scope (this phase):**
 
@@ -65,9 +92,9 @@ with one domain: **technical documentation / RAG evidence**.
 
 **Out of scope (explicitly not built, by rule):**
 
-- No Jev, rerankers, or LLM calls in the Phase 1 default core (an optional,
-  separately installed Jev scorer/evaluation path was added in later phases; it
-  may call an external paid API and is never required)
+- No Jev, rerankers, or LLM calls were in the original Phase 1 default core. JEV
+  scoring was added later and is the primary evidence scorer in the current
+  approved architecture.
 - No connectors; no cost calculation in the default core
 - No SaaS dashboard, no deployment
 - No API keys, secrets, or `.env` files
@@ -321,9 +348,10 @@ recall@k and context-reduction versus the current no-op baseline.
   unique task IDs, non-empty queries/passages, valid gold IDs, required facts,
   distribution, and no dev/test overlap.
 - `pytest` passes with no failures.
-- The default local core makes no paid model API, Jev, reranker, or LLM call
-  and has no connector, secret, `.env`, or deployment. The optional Jev
-  integration (not installed by default) may call an external API.
+- The standard MCP path constructs `LocalCorpusRetriever()` without an injected
+  JEV policy, so it makes no paid model API, JEV, reranker, or LLM call. An
+  injected remote JEV policy may call an external API; local-corpus retrieval is
+  not guaranteed to be network-free for every configuration.
 
 **PROPOSAL**
 
@@ -342,9 +370,9 @@ recall@k and context-reduction versus the current no-op baseline.
 
 ---
 
-## 16. Phase 2 — local lexical baseline and evaluation harness
+## 16. Historical Phase 2 — local lexical baseline and evaluation harness
 
-Phase 2 adds a **local, deterministic lexical baseline** and a metrics harness.
+The original Phase 2 added a **local, deterministic lexical baseline** and a metrics harness.
 It is **not** semantic retrieval, Jev, a reranker, an LLM, a security audit, or a
 product benchmark. It measures word-overlap evidence selection on the Phase 1
 dataset and reports evidence-retention / context-reduction metrics.
@@ -355,8 +383,8 @@ dataset and reports evidence-retention / context-reduction metrics.
   only, no network access. Lower-cases, tokenizes on `[a-z0-9]+`, drops a small
   fixed English stopword list, and scores with cosine similarity of raw
   term-frequency vectors. Deterministic for a fixed input.
-- `Scorer` (`src/evidence_layer/scoring/base.py`) — the interface a future Jev /
-  reranker / provider scorer can implement.
+- `Scorer` (`src/evidence_layer/scoring/base.py`) — the interface used by the
+  provider-selection policy for JEV and lexical scoring.
 - `select_top_k` (`src/evidence_layer/selection.py`) — returns the top-k
   candidate IDs by score (ties broken by `candidate_id` ascending). `k` is
   configurable and validated: it must be an integer ≥ 1, otherwise it fails
@@ -451,16 +479,16 @@ python scripts/run_sensitivity.py   # stopword sensitivity (dev only)
 pytest                              # run all tests
 ```
 
-## 18. Optional Jev scorer
+## 18. JEV evidence scorer and provider-selection policy
 
-The Jev scorer is an optional integration available through `pip install
+The JEV scorer is available through `pip install
 .[jev]` (`typesafe-sdk==0.7.2`). The SDK version is pinned; the requested model
 defaults to `jev-latest` because that alias was available to the account
 verified during development. It is an alias and may resolve to a changing
 underlying model; this does not provide pinned-model reproducibility. Callers
 can select another model explicitly with `JevEvidenceScorer(model="...")`.
 
-The default project installation does not import or require the TypeSafe SDK.
+The TypeSafe SDK remains isolated behind the provider-selection policy.
 Unit tests use fake clients. Future run metadata records the requested model,
 the actual `response.model` when safely available, the locally installed SDK
 version, a UTC timestamp, and the Git commit SHA when available. It does not
