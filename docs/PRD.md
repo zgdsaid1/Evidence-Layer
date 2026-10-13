@@ -122,8 +122,10 @@ answer generation.
 ### Plans and usage
 
 - Phase 5 free-tier usage-limit targets: 500 requests and 200K JEV tokens.
-- Pro target: $19/month, 3,000 requests, and 2M JEV tokens; paid-plan
-  enforcement and collection follow Phase 6.
+- Illustrative Pro pricing target: $19/month, with 3,000 requests and 2M
+  JEV tokens. This is an estimate for planning, not an approved final price.
+  Pricing, quota periods, token accounting, and paid-plan enforcement remain
+  subject to explicit product decisions.
 - Decisions routing metering, cost limits, and their relationship to JEV
   metering remain open for a future explicit decision.
 - Phase 6 target: Stripe subscription billing and $5 credit packs.
