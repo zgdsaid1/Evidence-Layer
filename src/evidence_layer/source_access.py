@@ -4,7 +4,8 @@ These types describe a request; their Python type or construction does not
 establish trusted identity or authorization. A trusted host must validate
 request provenance, resolve source ownership and policy, and own the storage
 operation. Phase 1 provides no production host, source catalog, ACL, or
-allowing boundary. The default boundary denies every content read.
+production allowing boundary. The default boundary denies every content read;
+the sole opt-in exception is a fixed, unprotected synthetic development fixture.
 
 An allowing implementation must authorize the complete source scope before it
 opens any source, bind returned readers to one request/operation/source version,
@@ -107,7 +108,9 @@ class SourceReadBoundary(Protocol):
     version-pinned sources. A denial for any intent must result in no content
     open for the operation. Authorization and opening must be coordinated
     against the same source version. Phase 1 has no production implementation
-    of these guarantees or durable replay/concurrency controls.
+    of these guarantees or durable replay/concurrency controls. The fixed
+    synthetic fixture exception does not validate trusted identity or authorize
+    real sources.
     """
 
     def open_sources(

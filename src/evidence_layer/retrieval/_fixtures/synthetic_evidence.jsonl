@@ -1,0 +1,3 @@
+{"passage_id":"synthetic-index","source_id":"synthetic-development-notes-v1","source_url":"https://example.test/synthetic/index","section":"Synthetic index note","text":"A synthetic btree index can speed up lookup examples."}
+{"passage_id":"synthetic-index-long","source_id":"synthetic-development-notes-v1","source_url":"https://example.test/synthetic/index-long","section":"Synthetic long index note","text":"btree index the the the the the the the the the the the the the the the the the the the the btree index"}
+{"passage_id":"synthetic-vacuum","source_id":"synthetic-development-notes-v1","source_url":"https://example.test/synthetic/vacuum","text":"A synthetic vacuum example reclaims test storage."}
