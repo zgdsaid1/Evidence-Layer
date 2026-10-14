@@ -48,8 +48,13 @@ class ScoringOutcome:
 class ProviderSelectionPolicy:
     """Select JEV only when explicitly enabled and allowed by both policies.
 
-    JEV is the primary provider in the approved evidence-scoring architecture.
-    This policy preserves explicit enablement and request/plan permission gates.
+    JEV is the intended primary provider in the target evidence-scoring
+    architecture when policy permits it. The ``jev_enabled``,
+    ``jev_permitted_by_request``, and ``jev_permitted_by_plan`` flags are
+    caller-supplied policy gates only; they are not trusted server-side
+    authorization to transfer query or candidate text to an external provider.
+    This policy does not implement provider-transfer authorization.
+
     Lexical scoring is always instantiated locally. If any JEV candidate fails,
     all scores for the request are recomputed lexically so rankings never mix
     providers and no partial JEV output is presented as a successful result.
