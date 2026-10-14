@@ -8,9 +8,11 @@ evaluation scripts, dataset artifacts, a JEV scorer, and a local stdio MCP
 server (`retrieve_evidence`). It does not contain a source router, Decisions
 API client, or the SaaS infrastructure described below.
 
-The `services/evidence-service/` directory is a placeholder for a future
-service. No local FastAPI/HTTP server or health endpoint is implemented there;
-the local stdio MCP server above is a separate existing component.
+The repository also contains a local, health-only FastAPI service at
+`services/evidence-service/`. It exposes only `GET /healthz`; it does not read
+corpus content, retrieve evidence, authenticate customers, or call providers.
+This local skeleton is separate from the stdio MCP server and is not a hosted
+deployment or customer-data service.
 
 Delivery phasing follows the canonical [Product Roadmap](ROADMAP.md): Phase 5
 requires mandatory per-user tenant isolation that protects each user's data;
@@ -62,9 +64,11 @@ document data or scorer behavior.
 
 - A local stdio MCP server is implemented and exposes `retrieve_evidence`.
 - Its standard tool path constructs `LocalCorpusRetriever()` without an
-  injected JEV policy and therefore remains lexical-only.
-- The `services/evidence-service/` directory is a placeholder; it contains no
-  local FastAPI/HTTP server or health endpoint.
+  injected JEV policy and is lexical-only, but the retriever's default source
+  boundary denies corpus reads before opening content. The tool therefore does
+  not currently return corpus evidence without a future trusted source boundary.
+- A separate local FastAPI health-only service exposes `GET /healthz`; it has no
+  retrieval, authentication, MCP, or provider integration.
 - The persistent Railway HTTP service is planned; it will host the same MCP
   protocol and `retrieve_evidence` tool.
 - The future customer-facing service must authenticate/authorize the caller
@@ -113,10 +117,10 @@ document data or scorer behavior.
   invalid, or incomplete scores, or any result that fails validation or cannot
   be used safely—requires recomputing the entire candidate set lexically. Never
   mix JEV and lexical scores or rankings.
-- Call TypeSafe only from a server-side boundary when JEV is enabled and
-  permitted by plan and request policy, and the separate transfer authorization
-  is present. An injected remote JEV policy means local-corpus retrieval is not
-  guaranteed to be network-free.
+- The target architecture calls TypeSafe only from a server-side boundary when
+  JEV is enabled and permitted by plan and request policy, and separate transfer
+  authorization is present. In the current implementation, live JEV transfer
+  is hard-denied on supported package paths, including injected dependencies.
 - Requested model defaults to `jev-latest`; record the provider-returned model
   when available because the alias may resolve to a changing concrete model.
 
@@ -197,8 +201,8 @@ usage enforcement are not present yet.
 Hosted authentication and tenant-isolation enforcement, hosted provider-transfer
 authorization, production source connectors and Decisions integration, hosted
 deployment, hosted database/RLS, dashboard, and billing are not implemented.
-The `services/evidence-service/` directory remains a placeholder, not an
-implemented local service or health endpoint.
+The local health-only FastAPI skeleton is implemented, but it is not a hosted
+service and has no customer-data capabilities.
 
 ## Initial Data Concepts
 

@@ -17,31 +17,35 @@ whether the agent should **answer**, **abstain**, or **escalate**.
 The approved target architecture makes JEV the intended primary evidence
 scorer only when explicitly enabled and permitted by policy. On any JEV failure
 or invalid/incomplete score, the entire candidate set is recomputed lexically;
-JEV and lexical rankings are never mixed. In the current runtime, JEV remains
-gated by the existing provider-selection policy, configuration, and permission
-checks; it is not enabled on every execution path. The standard MCP/stdio path
-remains lexical-only; remote scoring requires a trusted, appropriately scoped
-authorization boundary. The historical held-out comparison was
-**Inconclusive**.
+JEV and lexical rankings are never mixed. In the current runtime, live JEV
+transfer is hard-denied on supported package paths; policy flags, credentials,
+or injected dependencies do not enable it. The standard MCP/stdio path is
+lexical-only, but the current corpus retriever also denies source reads by
+default, so it does not return corpus evidence without a future trusted source
+boundary. Remote scoring requires a separate trusted, appropriately scoped
+provider-transfer authorization boundary. The historical held-out comparison
+was **Inconclusive**.
 
 A local stdio MCP server (`retrieve_evidence`) is implemented. The hosted SaaS
 product layer is not implemented: there is no hosted HTTP MCP service, hosted
 authentication, per-user tenant-isolation enforcement, database/RLS, hosted
 provider-transfer authorization, frontend/dashboard, billing, or production
-source connector. The `services/evidence-service/` directory is a placeholder;
-no local FastAPI/HTTP service or `/healthz` endpoint exists. The planned target
-architecture is Vercel/Next.js for the frontend, Supabase for backend services,
-Railway for the persistent HTTP MCP server, JEV for evidence scoring, and the
-OpenAI Decisions API for complex source routing. The source router and Decisions
-client are planned work and do not exist yet. This is a target design, not a
-description of deployed services. Decisions is required for complex routing;
-simple queries may route deterministically. Router and Decisions can select
-only from the authorized source catalog and cannot grant permissions, bypass
-tenant boundaries, or authorize external transfers. If Decisions is unavailable,
-times out, or returns invalid output, deterministic fallback may use only safely
-eligible, authorized sources; otherwise stop safely. Final answer generation
-remains the caller's model responsibility; Evidence Layer returns selected/ranked
-evidence, provenance, and relevant metadata.
+source connector. A local health-only FastAPI service now exists at
+`services/evidence-service/`; it exposes only `GET /healthz` and does not perform
+customer operations or read evidence. It is not a deployed hosted service. The
+planned target architecture is Vercel/Next.js for the frontend, Supabase for
+backend services, Railway for the persistent HTTP MCP server, JEV for evidence
+scoring, and the OpenAI Decisions API for complex source routing. The source
+router and Decisions client are planned work and do not exist yet. This is a
+target design, not a description of deployed services. Decisions is required
+for complex routing; simple queries may route deterministically. Router and
+Decisions can select only from the authorized source catalog and cannot grant
+permissions, bypass tenant boundaries, or authorize external transfers. If
+Decisions is unavailable, times out, or returns invalid output, deterministic
+fallback may use only safely eligible, authorized sources; otherwise stop
+safely. Final answer generation remains the caller's model responsibility;
+Evidence Layer returns selected/ranked evidence, provenance, and relevant
+metadata.
 
 In the target design, source-access permission does not authorize transferring
 query or candidate text to an external provider. The future trusted server must
@@ -349,9 +353,10 @@ recall@k and context-reduction versus the current no-op baseline.
   distribution, and no dev/test overlap.
 - `pytest` passes with no failures.
 - The standard MCP path constructs `LocalCorpusRetriever()` without an injected
-  JEV policy, so it makes no paid model API, JEV, reranker, or LLM call. An
-  injected remote JEV policy may call an external API; local-corpus retrieval is
-  not guaranteed to be network-free for every configuration.
+  JEV policy. The retriever's default source-read boundary denies before corpus
+  content is opened, and live JEV transfer is hard-denied before credential
+  lookup, SDK loading, payload construction, or provider calls. Injected JEV
+  dependencies do not enable live transfer in the current implementation.
 
 **PROPOSAL**
 

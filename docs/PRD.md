@@ -187,10 +187,12 @@ service, hosted authentication or tenant-isolation enforcement, production
 database or RLS, hosted provider-transfer authorization, production connectors,
 dashboard, billing, or Google Drive connector. The source router and Decisions
 API client are planned work, not implemented. The `services/evidence-service/`
-directory is a placeholder with no local HTTP server or health endpoint, and
-hosted deployment is not active. Final answer generation remains with the
-caller's model. No production readiness, savings, or generalization claim is
-established.
+directory contains a local health-only FastAPI service exposing `GET /healthz`;
+it has no customer operations and is not a hosted deployment. The current
+corpus retriever denies source reads by default, and live JEV transfer is
+hard-denied on supported package paths. Final answer generation remains with
+the caller's model. No production readiness, savings, or generalization claim
+is established.
 
 ## Open Product Decisions
 

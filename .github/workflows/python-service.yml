@@ -1,0 +1,27 @@
+name: Python service checks
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main, feat/python-health-service]
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install core, test, and service dependencies
+        run: python -m pip install -e ".[dev,service]"
+      - name: Run focused service tests
+        run: PYTHONDONTWRITEBYTECODE=1 python -m pytest -p no:cacheprovider tests/test_evidence_service_health.py
+      - name: Run full test suite
+        run: PYTHONDONTWRITEBYTECODE=1 python -m pytest -p no:cacheprovider
+      - name: Build service image without publishing
+        run: docker build -f services/evidence-service/Dockerfile -t evidence-service:ci .

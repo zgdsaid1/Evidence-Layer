@@ -29,22 +29,21 @@ are not yet implemented or deployed.
   Decisions API client do not yet exist in this repository. Final answer
   generation remains with the caller's model.
 
-The `services/evidence-service/` directory is a placeholder for future service
-work. It does not contain a local FastAPI/HTTP server or `/healthz` endpoint;
-the implemented local MCP server is the separate stdio component described
-above.
+`services/evidence-service/` contains a local, health-only FastAPI app with a
+`GET /healthz` endpoint. It is separate from the implemented local MCP stdio
+server and does not provide hosted authentication, retrieval, customer
+operations, or provider integration. Railway remains a future deployment target.
 
-`LocalCorpusRetriever` is implemented. It reads the local PostgreSQL corpus,
-selects candidates with lexical overlap, scores and ranks them through the
-provider-selection policy, then applies `budget_words`, which counts
-`text.split()` words of the selected evidence and is not a token count. It is
-not a production connector. Its default policy and standard MCP path are
-lexical-only; an injected remote JEV provider can make local-corpus retrieval
-use the network. The standard MCP path remains lexical-only; remote scoring is
-permitted only behind a trusted, appropriately scoped authorization boundary.
-The local MCP stdio server (`retrieve_evidence`) is
-implemented; the hosted HTTP service and production retrieval phase are not
-complete.
+`LocalCorpusRetriever` is implemented, but its current default source-read
+boundary denies before opening corpus content. The retrieval code is designed
+to select candidates with lexical overlap, score and rank them, then apply
+`budget_words`, which counts `text.split()` words and is not a token count; the
+default-deny boundary currently prevents that path from reading corpus records.
+The standard MCP stdio path remains lexical-only and likewise cannot read corpus
+content without a future trusted source boundary. Live JEV transfer is
+hard-denied on supported package paths, including when dependencies are
+injected. The local health-only HTTP service is not the hosted service or a
+production retrieval phase.
 
 The test result is one evaluation on this project's held-out dataset. It is not
 evidence of production readiness, savings, or generalization to customer
