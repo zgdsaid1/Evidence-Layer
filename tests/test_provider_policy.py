@@ -360,7 +360,7 @@ def test_jev_score_alignment_controls_retrieval_ranking_and_metadata(tmp_path):
     assert result.scoring_failure_category is None
 
 
-def test_local_retrieval_remains_deterministic_and_network_free(tmp_path):
+def test_default_local_retrieval_is_deterministic_without_remote_scoring(tmp_path):
     corpus = tmp_path / "corpus.jsonl"
     corpus.write_text(
         '{"passage_id":"b","source_id":"s","source_url":"local:b",'
