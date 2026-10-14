@@ -7,6 +7,10 @@ import os
 import socket
 
 import pytest
+
+pytest.importorskip("fastapi")
+pytest.importorskip("uvicorn")
+
 import uvicorn
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
