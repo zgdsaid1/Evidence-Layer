@@ -101,10 +101,13 @@ A, B, Tie, Both bad.
 
 ## 9. Phase 3 — Multi-source evidence architecture
 
-Phase 3 defines the connector interface and normalized evidence schema. Source
-routing, including the planned selective Decisions API router and deterministic
-routing fallback, is a separate responsibility from JEV evidence scoring,
-whole-request lexical scoring fallback, and caller-owned final answer generation.
+Phase 3 defines the EvidenceConnector interface and normalized evidence schema,
+concurrent connector execution, deduplication, fusion, reranking, context-budget
+allocation, connector timeouts and fallbacks, and connector health status and
+reporting. Source routing selects a strategy and eligible source candidates; it
+is separate from JEV evidence scoring and whole-candidate-set lexical fallback,
+and the caller's final answer generation. Connector health reporting describes
+connector operation and does not imply that a service health endpoint exists.
 
 ## 10. Phase 4 — Google Drive connector
 
@@ -192,7 +195,7 @@ Provider credentials, when used, remain server-side and are not exposed to
 users. Future Decisions API credentials are managed independently from JEV
 scoring credentials.
 
-Users do not add or manage provider API keys.
+Free and Pro users do not add or manage provider API keys.
 
 The platform is responsible for:
 

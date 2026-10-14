@@ -29,10 +29,10 @@ are not yet implemented or deployed.
   Decisions API client do not yet exist in this repository. Final answer
   generation remains with the caller's model.
 
-A separate local FastAPI health-only skeleton exposes only `GET /healthz`. It
-requires no application configuration and has no customer operations, evidence
-retrieval, source routing, database, JEV, Decisions, or other provider calls.
-It is not the hosted HTTP MCP service and is not deployed.
+The `services/evidence-service/` directory is a placeholder for future service
+work. It does not contain a local FastAPI/HTTP server or `/healthz` endpoint;
+the implemented local MCP server is the separate stdio component described
+above.
 
 `LocalCorpusRetriever` is implemented. It reads the local PostgreSQL corpus,
 selects candidates with lexical overlap, scores and ranks them through the

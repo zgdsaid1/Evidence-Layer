@@ -28,20 +28,20 @@ A local stdio MCP server (`retrieve_evidence`) is implemented. The hosted SaaS
 product layer is not implemented: there is no hosted HTTP MCP service, hosted
 authentication, per-user tenant-isolation enforcement, database/RLS, hosted
 provider-transfer authorization, frontend/dashboard, billing, or production
-source connector. A separate local FastAPI health-only skeleton exposes only
-`GET /healthz`; it is not deployed and cannot serve customer data. The planned
-target architecture is Vercel/Next.js for the frontend, Supabase for backend
-services, Railway for the persistent HTTP MCP server, JEV for evidence scoring,
-and the OpenAI Decisions API for complex source routing. The source router and
-Decisions client are planned work and do not exist yet. This is a target design,
-not a description of deployed services. Decisions is required for complex
-routing; simple queries may route deterministically. Router and Decisions can
-select only from the authorized source catalog and cannot grant permissions,
-bypass tenant boundaries, or authorize external transfers. If Decisions is
-unavailable, times out, or returns invalid output, deterministic fallback may
-use only safely eligible, authorized sources; otherwise stop safely. Final
-answer generation remains the caller's model responsibility; Evidence Layer
-returns selected/ranked evidence, provenance, and relevant metadata.
+source connector. The `services/evidence-service/` directory is a placeholder;
+no local FastAPI/HTTP service or `/healthz` endpoint exists. The planned target
+architecture is Vercel/Next.js for the frontend, Supabase for backend services,
+Railway for the persistent HTTP MCP server, JEV for evidence scoring, and the
+OpenAI Decisions API for complex source routing. The source router and Decisions
+client are planned work and do not exist yet. This is a target design, not a
+description of deployed services. Decisions is required for complex routing;
+simple queries may route deterministically. Router and Decisions can select
+only from the authorized source catalog and cannot grant permissions, bypass
+tenant boundaries, or authorize external transfers. If Decisions is unavailable,
+times out, or returns invalid output, deterministic fallback may use only safely
+eligible, authorized sources; otherwise stop safely. Final answer generation
+remains the caller's model responsibility; Evidence Layer returns selected/ranked
+evidence, provenance, and relevant metadata.
 
 In the target design, source-access permission does not authorize transferring
 query or candidate text to an external provider. The future trusted server must

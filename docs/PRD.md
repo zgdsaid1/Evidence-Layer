@@ -186,10 +186,11 @@ scoped authorization boundary. It does not yet implement the hosted HTTP
 service, hosted authentication or tenant-isolation enforcement, production
 database or RLS, hosted provider-transfer authorization, production connectors,
 dashboard, billing, or Google Drive connector. The source router and Decisions
-API client are planned work, not implemented; hosted deployment is not active,
-and the local health-only service is not a customer-data service. Final answer
-generation remains with the caller's model. No production readiness, savings,
-or generalization claim is established.
+API client are planned work, not implemented. The `services/evidence-service/`
+directory is a placeholder with no local HTTP server or health endpoint, and
+hosted deployment is not active. Final answer generation remains with the
+caller's model. No production readiness, savings, or generalization claim is
+established.
 
 ## Open Product Decisions
 

@@ -8,10 +8,9 @@ evaluation scripts, dataset artifacts, a JEV scorer, and a local stdio MCP
 server (`retrieve_evidence`). It does not contain a source router, Decisions
 API client, or the SaaS infrastructure described below.
 
-A separate local FastAPI health-only skeleton exposes only `GET /healthz`. It
-has no retrieval, source routing, customer operations, database, JEV, Decisions,
-or other provider calls; it requires no application configuration and is not
-the future hosted MCP service or a customer-data boundary.
+The `services/evidence-service/` directory is a placeholder for a future
+service. No local FastAPI/HTTP server or health endpoint is implemented there;
+the local stdio MCP server above is a separate existing component.
 
 Delivery phasing follows the canonical [Product Roadmap](ROADMAP.md): Phase 5
 requires mandatory per-user tenant isolation that protects each user's data;
@@ -64,8 +63,8 @@ document data or scorer behavior.
 - A local stdio MCP server is implemented and exposes `retrieve_evidence`.
 - Its standard tool path constructs `LocalCorpusRetriever()` without an
   injected JEV policy and therefore remains lexical-only.
-- A separate FastAPI health-only skeleton exposes only `GET /healthz`; it does
-  not retrieve evidence or provide customer operations, and it is not deployed.
+- The `services/evidence-service/` directory is a placeholder; it contains no
+  local FastAPI/HTTP server or health endpoint.
 - The persistent Railway HTTP service is planned; it will host the same MCP
   protocol and `retrieve_evidence` tool.
 - The future customer-facing service must authenticate/authorize the caller
@@ -198,8 +197,8 @@ usage enforcement are not present yet.
 Hosted authentication and tenant-isolation enforcement, hosted provider-transfer
 authorization, production source connectors and Decisions integration, hosted
 deployment, hosted database/RLS, dashboard, and billing are not implemented.
-The local health-only skeleton remains separate and has no customer-data
-operations.
+The `services/evidence-service/` directory remains a placeholder, not an
+implemented local service or health endpoint.
 
 ## Initial Data Concepts
 
@@ -207,7 +206,7 @@ operations.
   synchronization state, and deletion lifecycle.
 - **Chunk:** document segment with stable ID, text, provenance, and optional
   embedding/vector representation.
-- **Usage event:** request-level record of request count, Jev token counts,
+- **Usage event:** request-level record of request count, JEV token counts,
   model identity, latency, and safe outcome category.
 - **Experiment/run:** Comparison Lab configuration and aggregate result with
   explicit scope and provenance.
@@ -218,9 +217,10 @@ schema or isolation mechanism from these logical concepts.
 
 ## Plans and Limits (Target)
 
-- Phase 5 free-tier usage limits: 500 requests and 200K Jev tokens.
-- Phase 6 paid Pro target: $19/month, 3,000 requests and 2M Jev tokens, with
-  $5 credit packs.
+- Phase 5 free-tier usage limits: 500 requests and 200K JEV tokens.
+- Illustrative Phase 6 paid Pro target: $19/month, 3,000 requests and 2M JEV
+  tokens, with $5 credit packs. The $19/month figure is a planning estimate,
+  not an approved final price.
 
 Quota period, request counting semantics, token metering, overage behavior, and
 credit interaction are open decisions. Usage limits and metering are distinct
@@ -270,7 +270,7 @@ These are approved target placements; none imply a current deployment.
 - Exact Supabase schema, migrations, tenant model, and retention/deletion
   policies.
 - Google Drive OAuth scopes and synchronization model.
-- Whether the Comparison Lab compares lexical against Jev, or other frozen
+- Whether the Comparison Lab compares lexical against JEV, or other frozen
   configurations, and what user data it stores.
 
 ## Platform Deployment Target
