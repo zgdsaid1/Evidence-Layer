@@ -22,7 +22,7 @@
 | Platform | Allowed variables | Examples |
 |---|---|---|
 | Vercel (frontend) | Public only | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` (later) |
-| Railway (service) | Server-only | `SUPABASE_SERVICE_ROLE_KEY`, `JEV_API_KEY` |
+| Railway (future service) | `PORT` is non-secret; future server-only credentials | `SUPABASE_SERVICE_ROLE_KEY`, `JEV_API_KEY` (planned) |
 | GitHub Codespaces | Encrypted Codespaces secrets | provider keys used for local work |
 
 The Supabase service role key must never reach the frontend, a `NEXT_PUBLIC_*`
@@ -30,5 +30,6 @@ variable, or client-side code.
 
 ## Status
 
-No external project is created or linked yet; none of these variables are in
-use today.
+No external project is created or linked yet. The local health-only service
+reads the non-secret `PORT` setting (default `8000`); hosted database and
+provider credentials are not used by this service.

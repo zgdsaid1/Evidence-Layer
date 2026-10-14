@@ -78,13 +78,15 @@ relative to cost and latency.
 
 ## 6. Phase 0 — Reliable MCP foundation
 
-The implemented standard local MCP path is deterministic and uses lexical
-scoring because it constructs `LocalCorpusRetriever()` without injecting a JEV
-policy. Other local-retriever configurations may inject a remote JEV provider
-only behind a trusted, appropriately scoped authorization boundary. The
-foundation exposes the existing evidence core as a single read-only tool over
-stdio, with strict validation, safe errors, deterministic ranking, tool
-annotations, and logs on stderr only.
+The implemented standard local MCP tool path is deterministic and configures
+lexical scoring because it constructs `LocalCorpusRetriever()` without
+injecting a JEV policy. The retriever's current default source-read boundary
+denies before corpus content is opened, so the tool does not return corpus
+evidence absent a future trusted source boundary. Live JEV transfer is
+hard-denied on supported package paths; injected dependencies do not enable it.
+The separate local FastAPI service is health-only (`GET /healthz`) and is not
+part of corpus retrieval or a hosted deployment. The MCP tool provides strict
+request validation and safe errors over stdio.
 
 ## 7. Phase 1 — Prove evidence-selection value
 

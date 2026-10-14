@@ -18,9 +18,14 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8",
+    "httpx>=0.27,<1",
 ]
 jev = [
     "typesafe-sdk==0.7.2",
+]
+service = [
+    "fastapi>=0.115,<1",
+    "uvicorn>=0.30,<1",
 ]
 
 [tool.setuptools.packages.find]
@@ -29,3 +34,4 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+pythonpath = ["src", "services/evidence-service"]

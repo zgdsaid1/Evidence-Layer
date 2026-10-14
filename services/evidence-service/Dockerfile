@@ -1,16 +1,20 @@
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    PORT=8000
 
 WORKDIR /app
 
-# Build context is the repository root, e.g.:
-#   docker build -f services/evidence-service/Dockerfile .
 COPY pyproject.toml README.md ./
 COPY src ./src
-RUN pip install --no-cache-dir .
+COPY services/evidence-service/evidence_service ./evidence_service
+RUN python -m pip install --no-cache-dir '.[service]'
 
-# Placeholder only: there is no server yet. Replace with a real entry point
-# once an MCP/HTTP service with a health endpoint and auth model exists.
-CMD ["python", "-c", "import sys; print('evidence-service placeholder: no server implemented', file=sys.stderr); sys.exit(1)"]
+USER 10001:10001
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 CMD ["python", "-m", "evidence_service.healthcheck"]
+
+CMD ["python", "-m", "evidence_service"]
