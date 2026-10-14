@@ -7,12 +7,13 @@ variables, or secrets.
 """
 
 import inspect
-from pathlib import Path
 
 import pytest
 
 import evidence_layer.mcp.tools as tools_module
+from evidence_layer.retrieval import LocalCorpusRetriever
 from evidence_layer.mcp.tools import retrieve_evidence
+
 
 def test_valid_query_fails_closed_without_classified_source():
     result = retrieve_evidence("btree index")
@@ -34,18 +35,33 @@ def test_no_results_query_still_denies_unclassified_source():
 
 
 def test_mcp_does_not_open_an_unclassified_corpus(monkeypatch):
+    from evidence_layer.retrieval import synthetic_fixtures
+
     opened = []
 
-    def forbidden_read(path, *args, **kwargs):
-        opened.append(str(path))
+    def tracked_open(path, *args, **kwargs):
+        opened.append(path)
         raise AssertionError("MCP must not open an unclassified corpus")
 
-    monkeypatch.setattr(Path, "open", forbidden_read)
-    monkeypatch.setattr(Path, "read_text", forbidden_read)
+    monkeypatch.setattr(synthetic_fixtures.os, "open", tracked_open)
     result = retrieve_evidence("btree index")
 
     assert result["error"]["code"] == "source_unavailable"
     assert opened == []
+
+
+def test_standard_mcp_does_not_opt_in_to_synthetic_fixture(monkeypatch):
+    def forbidden_fixture_factory(*args, **kwargs):
+        raise AssertionError("standard MCP must not use the development fixture")
+
+    monkeypatch.setattr(
+        LocalCorpusRetriever,
+        "for_synthetic_development_fixture",
+        forbidden_fixture_factory,
+    )
+    result = retrieve_evidence("btree index")
+
+    assert result["error"]["code"] == "source_unavailable"
 
 
 @pytest.mark.parametrize("query", ["", "   ", "\n\t", 5, None, ["query"], b"bytes"])

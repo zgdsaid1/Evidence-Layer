@@ -31,6 +31,9 @@ service = [
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+evidence_layer = ["retrieval/_fixtures/*.jsonl"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"

@@ -3,8 +3,10 @@
 Construction is metadata-only and never opens or parses corpus content. A read
 requires an explicit request context and a boundary that authorizes the whole
 source scope before opening any source. The default boundary denies all reads;
-Phase 1 has no trusted host, source catalog, ACL, or unprotected-corpus
-classification. OS file permissions alone are not tenant isolation.
+the only exception is an explicit development helper for one fixed synthetic
+fixture. Phase 1 has no trusted host, production source catalog, ACL, or
+protected-corpus classification. OS file permissions alone are not tenant
+isolation.
 
 Local lexical scoring runs only after a source read has been authorized. A
 source-read denial is an error and never falls through to lexical ranking.
@@ -78,10 +80,11 @@ class LocalCorpusRetriever:
     """Retrieve evidence from source IDs through a default-deny read boundary.
 
     ``source_ids`` are identifiers only; they are not permission or storage
-    locations. Phase 1 does not accept an injected boundary: it always uses the
-    built-in deny-all implementation. A future trusted-host phase must change
-    this composition after implementing provenance validation. No filesystem
-    path or caller-supplied authorizer is accepted by this API.
+    locations. The ordinary constructor uses the built-in deny-all boundary
+    and accepts no injected boundary. The named development factory opts into
+    one fixed, unprotected synthetic fixture only. Neither path provides a
+    trusted host or authorization for real sources. No filesystem path or
+    caller-supplied authorizer is accepted by this API.
     """
 
     def __init__(
@@ -111,10 +114,36 @@ class LocalCorpusRetriever:
         # This stores only identifiers and dependencies. It deliberately does
         # not resolve storage or open, read, or parse content during construction.
         self._source_ids = normalized_source_ids
+        # The ordinary constructor always uses deny-all. Only the explicit
+        # synthetic-development factory below installs the fixed fixture reader.
+        self._source_read_boundary = DenyAllSourceReadBoundary()
         self._scoring_policy = (
             scoring_policy if scoring_policy is not None else ProviderSelectionPolicy()
         )
         self._retrieval_scorer = LexicalScorer()
+
+    @classmethod
+    def for_synthetic_development_fixture(
+        cls,
+    ) -> "LocalCorpusRetriever":
+        """Opt in to the one fixed, unprotected synthetic development source.
+
+        This helper accepts no path, source list, or boundary from its caller.
+        It is not used by standard MCP or the HTTP service, and it does not
+        establish authorization for real or protected data.
+        """
+        from evidence_layer.retrieval.synthetic_fixtures import (
+            SYNTHETIC_SOURCE_ID,
+            SyntheticFixtureReadBoundary,
+        )
+
+        if cls is not LocalCorpusRetriever:
+            raise TypeError(
+                "synthetic fixture retrieval is available on the built-in retriever only"
+            )
+        retriever = cls((SYNTHETIC_SOURCE_ID,))
+        retriever._source_read_boundary = SyntheticFixtureReadBoundary()
+        return retriever
 
     def _read_authorized_records(
         self, context: SourceRequestContext | None
@@ -153,7 +182,7 @@ class LocalCorpusRetriever:
             for source_id in self._source_ids
         )
         try:
-            opened = DenyAllSourceReadBoundary().open_sources(context, intents)
+            opened = self._source_read_boundary.open_sources(context, intents)
         except Exception:
             # Boundary exceptions may contain paths, content, or internal details.
             raise SourceReadError(
