@@ -7,83 +7,45 @@ variables, or secrets.
 """
 
 import inspect
+from pathlib import Path
 
 import pytest
 
 import evidence_layer.mcp.tools as tools_module
 from evidence_layer.mcp.tools import retrieve_evidence
 
-SUCCESS_KEYS = {
-    "status",
-    "query",
-    "top_k",
-    "budget_words",
-    "evidence",
-    "candidate_count",
-    "used_words",
-    "scoring_provider",
-    "scoring_failure_category",
-}
-
-EVIDENCE_KEYS = {
-    "evidence_id",
-    "text",
-    "source_id",
-    "source_url",
-    "section",
-    "score",
-    "word_count",
-}
-
-
-def test_valid_retrieval_success_contract():
+def test_valid_query_fails_closed_without_classified_source():
     result = retrieve_evidence("btree index")
-    assert set(result.keys()) == SUCCESS_KEYS
-    assert result["status"] == "ok"
-    assert result["query"] == "btree index"
-    assert result["top_k"] == 5
-    assert result["budget_words"] == 500
-    assert isinstance(result["candidate_count"], int)
-    assert isinstance(result["used_words"], int)
-    assert result["scoring_provider"] == "lexical"
-    assert result["scoring_failure_category"] is None
-    assert result["evidence"]
-    assert len(result["evidence"]) <= result["top_k"]
-    assert result["used_words"] <= result["budget_words"]
-    assert result["candidate_count"] >= len(result["evidence"])
-
-
-def test_evidence_item_contract():
-    result = retrieve_evidence("btree index")
-    assert result["status"] == "ok"
-    for item in result["evidence"]:
-        assert set(item.keys()) == EVIDENCE_KEYS
-        assert isinstance(item["evidence_id"], str)
-        assert isinstance(item["text"], str)
-        assert isinstance(item["source_id"], str)
-        assert isinstance(item["source_url"], str)
-        assert item["section"] is None or isinstance(item["section"], str)
-        assert isinstance(item["score"], float)
-        assert isinstance(item["word_count"], int)
-        assert item["word_count"] >= 1
-
-
-def test_query_is_stripped():
-    result = retrieve_evidence("   btree index   ")
-    assert result["query"] == "btree index"
+    assert result == {
+        "error": {
+            "code": "source_unavailable",
+            "message": "local source is unavailable",
+        }
+    }
 
 
 def test_determinism():
     assert retrieve_evidence("btree index") == retrieve_evidence("btree index")
 
 
-def test_no_results_is_success_not_error():
+def test_no_results_query_still_denies_unclassified_source():
     result = retrieve_evidence("zzzxqvnonexistenttoken")
-    assert result["status"] == "no_results"
-    assert result["evidence"] == []
-    assert result["candidate_count"] == 0
-    assert result["used_words"] == 0
-    assert "error" not in result
+    assert result["error"]["code"] == "source_unavailable"
+
+
+def test_mcp_does_not_open_an_unclassified_corpus(monkeypatch):
+    opened = []
+
+    def forbidden_read(path, *args, **kwargs):
+        opened.append(str(path))
+        raise AssertionError("MCP must not open an unclassified corpus")
+
+    monkeypatch.setattr(Path, "open", forbidden_read)
+    monkeypatch.setattr(Path, "read_text", forbidden_read)
+    result = retrieve_evidence("btree index")
+
+    assert result["error"]["code"] == "source_unavailable"
+    assert opened == []
 
 
 @pytest.mark.parametrize("query", ["", "   ", "\n\t", 5, None, ["query"], b"bytes"])
@@ -136,7 +98,6 @@ def test_corpus_failure_maps_to_corpus_unavailable(monkeypatch):
 
 
 def test_jev_fallback_metadata_is_reported_without_provider_error_body(monkeypatch):
-    from evidence_layer.scoring.jev import JevProviderError
     from evidence_layer.scoring.policy import build_provider_selection_policy
 
     secret = "SYNTHETIC_SECRET_PROVIDER_BODY"
@@ -144,18 +105,25 @@ def test_jev_fallback_metadata_is_reported_without_provider_error_body(monkeypat
     class FailingScorer:
         name = "jev"
 
+        def __init__(self):
+            self.calls = []
+
         def score(self, query, text):
-            raise JevProviderError(secret)
+            self.calls.append((query, text))
+            raise AssertionError("Phase 1 must not invoke an injected JEV scorer")
+
+    failing_scorer = FailingScorer()
 
     real_retriever = tools_module.LocalCorpusRetriever
 
     def retriever_with_failing_jev():
         return real_retriever(
+            ("unclassified-source",),
             scoring_policy=build_provider_selection_policy(
                 jev_enabled=True,
                 jev_permitted_by_request=True,
                 jev_permitted_by_plan=True,
-                jev_scorer=FailingScorer(),
+                jev_scorer=failing_scorer,
             )
         )
 
@@ -164,16 +132,32 @@ def test_jev_fallback_metadata_is_reported_without_provider_error_body(monkeypat
     )
     result = retrieve_evidence("btree index")
 
-    assert result["scoring_provider"] == "lexical"
-    assert result["scoring_failure_category"] == "provider_failure"
+    assert result["error"]["code"] == "source_unavailable"
     assert secret not in repr(result)
+    assert failing_scorer.calls == []
+
+
+def test_standard_mcp_adapter_never_invokes_direct_jev_scorer(monkeypatch):
+    from evidence_layer.scoring.jev import JevEvidenceScorer
+
+    calls = []
+
+    def forbidden_score(self, query, text):
+        calls.append((query, text))
+        raise AssertionError("standard MCP must remain lexical-only")
+
+    monkeypatch.setattr(JevEvidenceScorer, "score", forbidden_score)
+    result = retrieve_evidence("btree index")
+
+    assert result["error"]["code"] == "source_unavailable"
+    assert calls == []
 
 
 class _FakeInternalFailure:
     def __init__(self):
         pass
 
-    def retrieve(self, query, *, top_k=5, budget_words=500):
+    def retrieve(self, query, *, request_context=None, top_k=5, budget_words=500):
         raise RuntimeError("SECRET sk-1234567890 /home/secret/token")
 
 
@@ -193,7 +177,7 @@ class _FakeResultAttributeFailure:
     def __init__(self):
         pass
 
-    def retrieve(self, query, *, top_k=5, budget_words=500):
+    def retrieve(self, query, *, request_context=None, top_k=5, budget_words=500):
         return _ExplodingResult()
 
 
