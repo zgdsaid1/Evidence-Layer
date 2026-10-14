@@ -5,15 +5,21 @@ Pipeline (each stage is a separate method):
 1. **Retrieval** (``_retrieve_candidates``): keep only corpus records that share
    at least one normalized (stopword-filtered) token with the query. Loading the
    corpus is not retrieval; records without lexical overlap are never candidates.
-2. **Ranking** (``_rank``): order the candidates with the existing
-   ``select_top_k`` and ``LexicalScorer`` (unchanged).
+2. **Scoring and ranking** (``_rank``): use the provider-selection policy to
+   score candidates with the selected provider and rank from that provider's
+   complete score set. The policy uses whole-request lexical fallback if JEV
+   scoring fails; it never mixes provider scores.
 3. **Budget filtering** (``_apply_budget``): walk the ranked list, keep evidence
    that fits the remaining ``budget_words``, skip ones that do not, and stop at
    ``top_k``.
 
 ``budget_words`` counts ``text.split()`` words of the selected evidence only. It
-is an estimate, not a token count. This is a local reader only: no network, not a
-production connector, and not an MCP server.
+is an estimate, not a token count. Retrieval operations are local by default,
+but retrieval is not guaranteed to be network-free when a caller injects a
+scoring policy that uses a remote JEV provider. In that configuration, scoring
+may send the query and candidate text to that provider. The default scoring
+policy and standard MCP construction remain lexical-only. This module is not a
+production connector or an MCP server.
 """
 
 from __future__ import annotations
@@ -73,7 +79,12 @@ def _require_positive_int(name: str, value: object) -> int:
 
 
 class LocalCorpusRetriever:
-    """Retrieve ranked, budgeted evidence from a local JSONL corpus."""
+    """Retrieve ranked, budgeted evidence from a local JSONL corpus.
+
+    Corpus access is local. An explicitly injected scoring policy may call a
+    remote JEV provider; the default policy is lexical-only. The standard MCP
+    path does not inject a JEV policy.
+    """
 
     def __init__(
         self,

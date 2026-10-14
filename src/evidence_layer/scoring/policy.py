@@ -1,4 +1,4 @@
-"""Request-scoped selection between local lexical and optional Jev scoring."""
+"""Request-scoped JEV scoring selection with whole-request lexical fallback."""
 
 from __future__ import annotations
 
@@ -46,11 +46,18 @@ class ScoringOutcome:
 
 
 class ProviderSelectionPolicy:
-    """Prefer Jev only when explicitly enabled and allowed by both policies.
+    """Select JEV only when explicitly enabled and allowed by both policies.
 
-    Lexical scoring is always instantiated locally. If any Jev candidate fails,
+    JEV is the intended primary provider in the target evidence-scoring
+    architecture when policy permits it. The ``jev_enabled``,
+    ``jev_permitted_by_request``, and ``jev_permitted_by_plan`` flags are
+    caller-supplied policy gates only; they are not trusted server-side
+    authorization to transfer query or candidate text to an external provider.
+    This policy does not implement provider-transfer authorization.
+
+    Lexical scoring is always instantiated locally. If any JEV candidate fails,
     all scores for the request are recomputed lexically so rankings never mix
-    providers and no partial Jev output is presented as a successful result.
+    providers and no partial JEV output is presented as a successful result.
     """
 
     def __init__(
