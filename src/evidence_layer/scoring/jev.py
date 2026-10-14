@@ -5,16 +5,14 @@ from __future__ import annotations
 import importlib
 from importlib.metadata import PackageNotFoundError, version
 import math
-import os
 import re
 import subprocess
-import time
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Protocol
+from typing import NoReturn, Protocol
 
 from evidence_layer.scoring.base import Scorer
 
@@ -50,6 +48,19 @@ class JevProviderError(JevScorerError):
 
 class JevResponseError(JevScorerError):
     category = "invalid_response"
+
+
+class JevTransferDeniedError(JevScorerError):
+    """Safe denial while no trusted host exists to authorize JEV transfers."""
+
+    category = "transfer_denied"
+
+
+def _deny_live_transfer() -> NoReturn:
+    """Hard Phase 1 barrier shared by all JEV client and egress paths."""
+    raise JevTransferDeniedError(
+        "JEV transfer is disabled pending a trusted authorization boundary."
+    )
 
 
 @dataclass(frozen=True)
@@ -239,7 +250,13 @@ def _extract_score(response: object, question_id: str) -> float:
 
 
 class JevEvidenceScorer(Scorer):
-    """Score one candidate with Jev; TypeSafe SDK imports occur only on demand."""
+    """JEV scorer whose live transfer path is disabled in Phase 1.
+
+    Constructor-injected clients and credentials do not enable transfer. A
+    future trusted-host phase must replace the hard deny with a validator that
+    binds each provider attempt to a complete operation grant. It must also
+    control SDK retries below ``system_one``; Phase 1 makes no live call.
+    """
 
     name = "jev"
 
@@ -267,33 +284,16 @@ class JevEvidenceScorer(Scorer):
         self.retry_policy = retry_policy
         self.split = split
         self.case_id = case_id
-        self._client = client
-        self._noul_factory = noul_factory
+        # Keep the constructor shape for compatibility but do not retain injected
+        # clients or factories while live JEV transfer is disabled.
         self._run_id = str(uuid.uuid4())
         self.last_record: JevBenchmarkRecord | None = None
 
     def _resolve_client(
         self,
     ) -> tuple[_SystemOneClient, Callable[[str], object], str | None]:
-        api_key: str | None = None
-        if self._client is None:
-            api_key = os.environ.get("TYPESAFE_API_KEY")
-            if not api_key:
-                raise JevConfigurationError(
-                    "TYPESAFE_API_KEY is required for live Jev scoring."
-                )
-        if self._client is None or self._noul_factory is None:
-            client_type, noul_type = _load_sdk()
-            if self._client is None:
-                try:
-                    self._client = client_type(api_key=api_key)
-                except Exception:
-                    raise JevProviderError("The Jev provider request failed.") from None
-            if self._noul_factory is None:
-                self._noul_factory = lambda instructions: noul_type(
-                    instructions=instructions
-                )
-        return self._client, self._noul_factory, api_key
+        """Reject client resolution until a trusted egress boundary exists."""
+        _deny_live_transfer()
 
     def _make_record(
         self,
@@ -328,56 +328,51 @@ class JevEvidenceScorer(Scorer):
         )
 
     def score(self, query: str, text: str) -> float:
-        started = time.monotonic()
-        self.last_record = None
-        try:
-            client, noul_factory, api_key = self._resolve_client()
-            state: dict[str, object] = {
-                "query": query,
-                "candidates": {_QUESTION_ID: text},
-            }
-            instructions = (
-                f"{_QUESTION_TEXT} Candidate identifier: {_QUESTION_ID}."
-            )
-            questions = {_QUESTION_ID: noul_factory(instructions)}
+        # Deny before credential lookup, SDK import, payload construction, or I/O.
+        self.last_record = JevBenchmarkRecord(
+            run_id=self._run_id,
+            split=self.split,
+            case_id=self.case_id,
+            candidate_count=1,
+            model_requested=self.model,
+            model_returned=None,
+            sdk_version=None,
+            timestamp_utc=datetime.now(timezone.utc).isoformat(),
+            git_commit_sha=None,
+            input_tokens=None,
+            output_tokens=None,
+            latency_ms=0,
+            retry_count=None,
+            failure_category=JevTransferDeniedError.category,
+            estimated_input_cost_usd=None,
+            input_cost_label=None,
+        )
+        _deny_live_transfer()
 
-            response = client.system_one(
-                state,
-                questions,
-                model=self.model,
-                retry=_sdk_retry_argument(),
-                timeout=self.timeout,
-            )
+    @staticmethod
+    def _system_one(
+        client: _SystemOneClient,
+        state: dict[str, object],
+        questions: dict[str, object],
+        *,
+        model: str,
+        retry: object | None,
+        timeout: float,
+    ) -> object:
+        """Final Phase 1 egress guard, immediately adjacent to the SDK call.
 
-            score = _extract_score(response, _QUESTION_ID)
-            try:
-                returned_model = getattr(response, "model", None)
-                usage = getattr(response, "usage", None)
-            except Exception:
-                returned_model = None
-                usage = None
-            self.last_record = self._make_record(
-                model_returned=_safe_returned_model(
-                    returned_model, self.model, query, text, api_key
-                ),
-                input_tokens=_optional_token_count(usage, "input_tokens"),
-                output_tokens=_optional_token_count(usage, "output_tokens"),
-                latency_ms=int((time.monotonic() - started) * 1000),
-            )
-            return score
-        except JevScorerError as error:
-            self.last_record = self._make_record(
-                latency_ms=int((time.monotonic() - started) * 1000),
-                failure_category=error.category,
-            )
-            raise
-        except Exception:
-            error = JevProviderError("The Jev provider request failed.")
-            self.last_record = self._make_record(
-                latency_ms=int((time.monotonic() - started) * 1000),
-                failure_category=error.category,
-            )
-            raise error from None
+        This unconditional denial is intentional: no issuer or trusted host is
+        available in this phase. Do not replace it with caller-supplied grants,
+        flags, environment state, or injected authorization objects.
+        """
+        _deny_live_transfer()
+        return client.system_one(
+            state,
+            questions,
+            model=model,
+            retry=retry,
+            timeout=timeout,
+        )
 
 
 def render_benchmark_csv(records: list[JevBenchmarkRecord]) -> str:

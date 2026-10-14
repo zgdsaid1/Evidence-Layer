@@ -1,19 +1,23 @@
-"""Local, lexical-first retrieval over a JSONL passage corpus.
+"""Local-only retrieval over a JSONL passage corpus.
 
 Pipeline (each stage is a separate method):
 
 1. **Retrieval** (``_retrieve_candidates``): keep only corpus records that share
    at least one normalized (stopword-filtered) token with the query. Loading the
    corpus is not retrieval; records without lexical overlap are never candidates.
-2. **Ranking** (``_rank``): order the candidates with the existing
-   ``select_top_k`` and ``LexicalScorer`` (unchanged).
+2. **Ranking** (``_rank``): score the complete local candidate set through the
+   provider policy, which remains lexical-only in Phase 1.
 3. **Budget filtering** (``_apply_budget``): walk the ranked list, keep evidence
    that fits the remaining ``budget_words``, skip ones that do not, and stop at
    ``top_k``.
 
 ``budget_words`` counts ``text.split()`` words of the selected evidence only. It
-is an estimate, not a token count. This is a local reader only: no network, not a
-production connector, and not an MCP server.
+is an estimate, not a token count. This is a local reader only: no network,
+source ACL, tenant isolation, production connector, or MCP server. It must not
+be used for protected or tenant-owned content; a future trusted host must
+authorize source access before retrieval and establish a tenant-scoped corpus
+boundary. Local reads rely only on the host operating system's file access
+controls; those controls do not establish tenant isolation.
 """
 
 from __future__ import annotations
@@ -81,7 +85,13 @@ class LocalCorpusRetriever:
         *,
         scoring_policy: ProviderSelectionPolicy | None = None,
     ) -> None:
-        self._scoring_policy = scoring_policy or ProviderSelectionPolicy()
+        if scoring_policy is not None and type(scoring_policy) is not ProviderSelectionPolicy:
+            raise TypeError(
+                "scoring_policy must be a built-in ProviderSelectionPolicy"
+            )
+        self._scoring_policy = (
+            scoring_policy if scoring_policy is not None else ProviderSelectionPolicy()
+        )
         self._retrieval_scorer = LexicalScorer()
         self._records = self._load(Path(corpus_path))
 
@@ -121,9 +131,7 @@ class LocalCorpusRetriever:
     def _rank(
         self, candidates: list[EvidenceCandidate], query: str
     ) -> tuple[list[str], dict[str, float], ScoringOutcome]:
-        outcome = self._scoring_policy.score(
-            query, [candidate.text for candidate in candidates]
-        )
+        outcome = self._scoring_policy.score_candidates(query, candidates)
         ranked_ids = select_top_k_scored(
             candidates, outcome.scores, len(candidates) or 1
         ) if candidates else []

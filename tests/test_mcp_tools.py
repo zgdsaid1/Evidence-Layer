@@ -136,7 +136,6 @@ def test_corpus_failure_maps_to_corpus_unavailable(monkeypatch):
 
 
 def test_jev_fallback_metadata_is_reported_without_provider_error_body(monkeypatch):
-    from evidence_layer.scoring.jev import JevProviderError
     from evidence_layer.scoring.policy import build_provider_selection_policy
 
     secret = "SYNTHETIC_SECRET_PROVIDER_BODY"
@@ -144,8 +143,14 @@ def test_jev_fallback_metadata_is_reported_without_provider_error_body(monkeypat
     class FailingScorer:
         name = "jev"
 
+        def __init__(self):
+            self.calls = []
+
         def score(self, query, text):
-            raise JevProviderError(secret)
+            self.calls.append((query, text))
+            raise AssertionError("Phase 1 must not invoke an injected JEV scorer")
+
+    failing_scorer = FailingScorer()
 
     real_retriever = tools_module.LocalCorpusRetriever
 
@@ -155,7 +160,7 @@ def test_jev_fallback_metadata_is_reported_without_provider_error_body(monkeypat
                 jev_enabled=True,
                 jev_permitted_by_request=True,
                 jev_permitted_by_plan=True,
-                jev_scorer=FailingScorer(),
+                jev_scorer=failing_scorer,
             )
         )
 
@@ -165,8 +170,26 @@ def test_jev_fallback_metadata_is_reported_without_provider_error_body(monkeypat
     result = retrieve_evidence("btree index")
 
     assert result["scoring_provider"] == "lexical"
-    assert result["scoring_failure_category"] == "provider_failure"
+    assert result["scoring_failure_category"] == "transfer_denied"
     assert secret not in repr(result)
+    assert failing_scorer.calls == []
+
+
+def test_standard_mcp_adapter_never_invokes_direct_jev_scorer(monkeypatch):
+    from evidence_layer.scoring.jev import JevEvidenceScorer
+
+    calls = []
+
+    def forbidden_score(self, query, text):
+        calls.append((query, text))
+        raise AssertionError("standard MCP must remain lexical-only")
+
+    monkeypatch.setattr(JevEvidenceScorer, "score", forbidden_score)
+    result = retrieve_evidence("btree index")
+
+    assert result["scoring_provider"] == "lexical"
+    assert result["status"] in {"ok", "no_results", "budget_exhausted"}
+    assert calls == []
 
 
 class _FakeInternalFailure:
