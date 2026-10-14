@@ -11,6 +11,7 @@ wrongly-typed or non-JSON-safe values safely before any core work happens.
 from __future__ import annotations
 
 from evidence_layer.retrieval.local_corpus import LocalCorpusRetriever
+from evidence_layer.source_access import SourceReadError
 
 _TOP_K_MIN = 1
 _TOP_K_MAX = 20
@@ -46,8 +47,9 @@ def retrieve_evidence(
 ) -> dict[str, object]:
     """Retrieve ranked, budgeted local evidence for ``query``.
 
-    Returns a JSON-compatible dict on success, or a structured error dict on
-    validation, corpus, or unexpected failure. Deterministic and read-only.
+    This standard stdio path has no trusted request context or source catalog.
+    It therefore fails closed until a source is explicitly classified and a
+    trusted boundary is composed. It never opens an unclassified corpus.
     """
     stripped_query = _validate_query(query)
     if stripped_query is None:
@@ -100,5 +102,7 @@ def retrieve_evidence(
             "scoring_provider": result.scoring_provider,
             "scoring_failure_category": result.scoring_failure_category,
         }
+    except SourceReadError:
+        return _error("source_unavailable", "local source is unavailable")
     except Exception:
         return _error("internal_error", "retrieve_evidence failed")

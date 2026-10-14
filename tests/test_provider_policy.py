@@ -22,6 +22,14 @@ from evidence_layer.scoring.policy import (
     _lexical_recompute_after_provider_failure,
     build_provider_selection_policy,
 )
+from evidence_layer.source_access import (
+    DenyAllSourceReadBoundary,
+    SourceReadDenial,
+    SourceReadDenialReason,
+    SourceReadError,
+    SourceReadLease,
+    SourceRequestContext,
+)
 from evidence_layer.selection import select_top_k, select_top_k_scored
 
 
@@ -64,6 +72,87 @@ def _context() -> RequestOperationContext:
         tenant_id="tenant-1",
         policy_version="policy-v1",
     )
+
+
+def _source_context() -> SourceRequestContext:
+    return SourceRequestContext(
+        request_id="source-request-1",
+        operation_id="source-operation-1",
+        principal_id="fixture-principal",
+        tenant_id="fixture-tenant",
+        policy_version="fixture-policy-v1",
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=1),
+    )
+
+
+class _FixtureReader:
+    def __init__(self, lease, records):
+        self.lease = lease
+        self._records = records
+
+    def iter_records(self):
+        return iter(self._records)
+
+    def close(self):
+        return None
+
+
+class _UnprotectedFixtureBoundary:
+    """Test-only authorization for in-memory, explicitly unprotected fixtures."""
+
+    def __init__(self, context, source_records, classifications):
+        self.context = context
+        self.source_records = source_records
+        self.classifications = classifications
+        self.opened_sources = []
+
+    def open_sources(self, context, intents):
+        intents = tuple(intents)
+        if context != self.context or context.expires_at <= datetime.now(timezone.utc):
+            return SourceReadDenial(SourceReadDenialReason.SCOPE_MISMATCH)
+        if not intents or any(
+            intent.operation != "retrieve"
+            or intent.source_id not in self.source_records
+            or self.classifications.get(intent.source_id)
+            != "unprotected-development"
+            for intent in intents
+        ):
+            return SourceReadDenial(SourceReadDenialReason.SCOPE_MISMATCH)
+        # All fixture sources are explicitly classified before any reader is
+        # returned. This fake is test-only and is not production authorization.
+        self.opened_sources.extend(intent.source_id for intent in intents)
+        return tuple(
+            _FixtureReader(
+                SourceReadLease(
+                    request_id=context.request_id,
+                    operation_id=context.operation_id,
+                    principal_id=context.principal_id,
+                    tenant_id=context.tenant_id,
+                    source_id=intent.source_id,
+                    operation=intent.operation,
+                    source_version="fixture-v1",
+                    expires_at=context.expires_at,
+                ),
+                self.source_records[intent.source_id],
+            )
+            for intent in intents
+        )
+
+
+class _DenySourceBoundary:
+    def __init__(self):
+        self.calls = []
+
+    def open_sources(self, context, intents):
+        self.calls.append((context, tuple(intents)))
+        return SourceReadDenial(SourceReadDenialReason.DENY_ALL)
+
+
+def _install_fixture_boundary(monkeypatch, boundary):
+    def open_sources(_deny_all, context, intents):
+        return boundary.open_sources(context, intents)
+
+    monkeypatch.setattr(DenyAllSourceReadBoundary, "open_sources", open_sources)
 
 
 def _enabled_policy(*, scorer: Scorer, context=None):
@@ -278,13 +367,22 @@ def test_invalid_partial_fake_scores_recompute_the_complete_set_lexically():
 
 
 def test_retriever_transfers_candidate_source_ids_to_default_deny_preflight(
-    tmp_path, monkeypatch
+    monkeypatch
 ):
-    corpus = tmp_path / "corpus.jsonl"
-    corpus.write_text(
-        '{"passage_id":"candidate-1","source_id":"source-1",'
-        '"source_url":"local:fixture","text":"alpha evidence"}\n',
-        encoding="utf-8",
+    source_context = _source_context()
+    boundary = _UnprotectedFixtureBoundary(
+        source_context,
+        {
+            "source-1": [
+                {
+                    "passage_id": "candidate-1",
+                    "source_id": "source-1",
+                    "source_url": "local:fixture",
+                    "text": "alpha evidence",
+                }
+            ]
+        },
+        classifications={"source-1": "unprotected-development"},
     )
     context = _context()
     jev = FakeScorer({"alpha evidence": 0.8})
@@ -296,27 +394,63 @@ def test_retriever_transfers_candidate_source_ids_to_default_deny_preflight(
 
     monkeypatch.setattr(DenyAllTransferAuthorizer, "authorize", record_and_deny)
     policy = _enabled_policy(scorer=jev, context=context)
-    result = LocalCorpusRetriever(corpus, scoring_policy=policy).retrieve("alpha")
+    _install_fixture_boundary(monkeypatch, boundary)
+    result = LocalCorpusRetriever(("source-1",), scoring_policy=policy).retrieve(
+        "alpha", request_context=source_context
+    )
 
     assert result.scoring_provider == "lexical"
     assert result.scoring_failure_category == "transfer_denied"
     assert calls[0][1].source_ids == frozenset({"source-1"})
     assert calls[0][1].candidate_ids == frozenset({"candidate-1"})
     assert jev.calls == []
+    assert boundary.opened_sources == ["source-1"]
 
 
-def test_local_retrieval_remains_deterministic_and_network_free(tmp_path):
-    corpus = tmp_path / "corpus.jsonl"
-    corpus.write_text(
-        '{"passage_id":"b","source_id":"s","source_url":"local:b",'
-        '"text":"alpha beta"}\n'
-        '{"passage_id":"a","source_id":"s","source_url":"local:a",'
-        '"text":"alpha"}\n',
-        encoding="utf-8",
+def test_source_read_denial_does_not_fall_back_to_returning_lexical_content(
+    monkeypatch,
+):
+    context = _source_context()
+    boundary = _DenySourceBoundary()
+    _install_fixture_boundary(monkeypatch, boundary)
+    jev = FakeScorer({"secret evidence": 0.99})
+    policy = _enabled_policy(scorer=jev, context=_context())
+    retriever = LocalCorpusRetriever(("source-1",), scoring_policy=policy)
+
+    with pytest.raises(SourceReadError) as denied:
+        retriever.retrieve("secret query", request_context=context)
+
+    assert denied.value.denial.reason is SourceReadDenialReason.DENY_ALL
+    assert len(boundary.calls) == 1
+    assert jev.calls == []
+
+
+def test_local_retrieval_remains_deterministic_and_network_free(monkeypatch):
+    source_context = _source_context()
+    boundary = _UnprotectedFixtureBoundary(
+        source_context,
+        {
+            "s": [
+                {
+                    "passage_id": "b",
+                    "source_id": "s",
+                    "source_url": "local:b",
+                    "text": "alpha beta",
+                },
+                {
+                    "passage_id": "a",
+                    "source_id": "s",
+                    "source_url": "local:a",
+                    "text": "alpha",
+                },
+            ]
+        },
+        classifications={"s": "unprotected-development"},
     )
-    retriever = LocalCorpusRetriever(corpus)
-    first = retriever.retrieve("alpha")
-    second = retriever.retrieve("alpha")
+    _install_fixture_boundary(monkeypatch, boundary)
+    retriever = LocalCorpusRetriever(("s",))
+    first = retriever.retrieve("alpha", request_context=source_context)
+    second = retriever.retrieve("alpha", request_context=source_context)
 
     assert first == second
     assert first.scoring_provider == "lexical"
@@ -324,15 +458,13 @@ def test_local_retrieval_remains_deterministic_and_network_free(tmp_path):
     assert select_top_k(_candidates(), LexicalScorer(), "alpha", 2) == ["b", "a"]
 
 
-def test_custom_scoring_policy_cannot_be_injected_into_local_retriever(tmp_path):
+def test_custom_scoring_policy_cannot_be_injected_into_local_retriever():
     class CustomPolicy:
         def score_candidates(self, query, candidates):
             raise AssertionError("custom policy must not be invoked")
 
-    corpus = tmp_path / "corpus.jsonl"
-    corpus.write_text("", encoding="utf-8")
     with pytest.raises(TypeError, match="built-in ProviderSelectionPolicy"):
-        LocalCorpusRetriever(corpus, scoring_policy=CustomPolicy())
+        LocalCorpusRetriever(("source",), scoring_policy=CustomPolicy())
 
 
 def test_precomputed_scores_keep_candidate_alignment_and_tie_order():

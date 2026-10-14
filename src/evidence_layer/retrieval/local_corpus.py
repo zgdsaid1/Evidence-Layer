@@ -1,43 +1,49 @@
-"""Local-only retrieval over a JSONL passage corpus.
+"""Local retrieval over sources opened by a source-read boundary.
 
-Pipeline (each stage is a separate method):
+Construction is metadata-only and never opens or parses corpus content. A read
+requires an explicit request context and a boundary that authorizes the whole
+source scope before opening any source. The default boundary denies all reads;
+Phase 1 has no trusted host, source catalog, ACL, or unprotected-corpus
+classification. OS file permissions alone are not tenant isolation.
 
-1. **Retrieval** (``_retrieve_candidates``): keep only corpus records that share
-   at least one normalized (stopword-filtered) token with the query. Loading the
-   corpus is not retrieval; records without lexical overlap are never candidates.
-2. **Ranking** (``_rank``): score the complete local candidate set through the
-   provider policy, which remains lexical-only in Phase 1.
-3. **Budget filtering** (``_apply_budget``): walk the ranked list, keep evidence
-   that fits the remaining ``budget_words``, skip ones that do not, and stop at
-   ``top_k``.
-
-``budget_words`` counts ``text.split()`` words of the selected evidence only. It
-is an estimate, not a token count. This is a local reader only: no network,
-source ACL, tenant isolation, production connector, or MCP server. It must not
-be used for protected or tenant-owned content; a future trusted host must
-authorize source access before retrieval and establish a tenant-scoped corpus
-boundary. Local reads rely only on the host operating system's file access
-controls; those controls do not establish tenant isolation.
+Local lexical scoring runs only after a source read has been authorized. A
+source-read denial is an error and never falls through to lexical ranking.
+Provider-transfer authorization remains a separate policy decision.
 """
 
 from __future__ import annotations
 
-import json
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from pathlib import Path
+from datetime import datetime, timezone
 
 from evidence_layer.schemas import EvidenceCandidate
-from evidence_layer.scoring.policy import ProviderSelectionPolicy, ScoringOutcome
 from evidence_layer.scoring.lexical import LexicalScorer
+from evidence_layer.scoring.policy import ProviderSelectionPolicy, ScoringOutcome
 from evidence_layer.selection import select_top_k_scored
-
-DEFAULT_CORPUS_PATH = (
-    Path(__file__).resolve().parents[3] / "data" / "corpus" / "postgresql_passages.jsonl"
+from evidence_layer.source_access import (
+    AuthorizedSourceReader,
+    DenyAllSourceReadBoundary,
+    SourceReadDenial,
+    SourceReadDenialReason,
+    SourceReadError,
+    SourceReadIntent,
+    SourceReadLease,
+    SourceRequestContext,
+    context_is_expired,
 )
 
 STATUS_OK = "ok"
 STATUS_NO_RESULTS = "no_results"
 STATUS_BUDGET_EXHAUSTED = "budget_exhausted"
+
+
+def _require_positive_int(name: str, value: object) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise TypeError(f"{name} must be an integer, got {type(value).__name__}")
+    if value < 1:
+        raise ValueError(f"{name} must be >= 1, got {value}")
+    return value
 
 
 @dataclass(frozen=True)
@@ -55,7 +61,7 @@ class LocalEvidence:
 
 @dataclass(frozen=True)
 class LocalRetrievalResult:
-    """Outcome of one retrieval. ``status`` is ok, no_results or budget_exhausted."""
+    """Outcome of one authorized retrieval."""
 
     status: str
     query: str
@@ -68,73 +74,239 @@ class LocalRetrievalResult:
     scoring_failure_category: str | None = None
 
 
-def _require_positive_int(name: str, value: object) -> int:
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise TypeError(f"{name} must be an integer, got {type(value).__name__}")
-    if value < 1:
-        raise ValueError(f"{name} must be >= 1, got {value}")
-    return value
-
-
 class LocalCorpusRetriever:
-    """Retrieve ranked, budgeted evidence from a local JSONL corpus."""
+    """Retrieve evidence from source IDs through a default-deny read boundary.
+
+    ``source_ids`` are identifiers only; they are not permission or storage
+    locations. Phase 1 does not accept an injected boundary: it always uses the
+    built-in deny-all implementation. A future trusted-host phase must change
+    this composition after implementing provenance validation. No filesystem
+    path or caller-supplied authorizer is accepted by this API.
+    """
 
     def __init__(
         self,
-        corpus_path: Path | str = DEFAULT_CORPUS_PATH,
+        source_ids: Sequence[str] = (),
         *,
         scoring_policy: ProviderSelectionPolicy | None = None,
     ) -> None:
-        if scoring_policy is not None and type(scoring_policy) is not ProviderSelectionPolicy:
-            raise TypeError(
-                "scoring_policy must be a built-in ProviderSelectionPolicy"
-            )
+        if not isinstance(source_ids, Sequence) or isinstance(
+            source_ids, (str, bytes)
+        ):
+            raise TypeError("source_ids must be a sequence of source identifiers")
+        normalized_source_ids = tuple(source_ids)
+        if any(
+            not isinstance(source_id, str) or not source_id
+            for source_id in normalized_source_ids
+        ):
+            raise ValueError("source_ids must contain non-empty identifiers")
+        if len(set(normalized_source_ids)) != len(normalized_source_ids):
+            raise ValueError("source_ids must be unique")
+        if (
+            scoring_policy is not None
+            and type(scoring_policy) is not ProviderSelectionPolicy
+        ):
+            raise TypeError("scoring_policy must be a built-in ProviderSelectionPolicy")
+
+        # This stores only identifiers and dependencies. It deliberately does
+        # not resolve storage or open, read, or parse content during construction.
+        self._source_ids = normalized_source_ids
         self._scoring_policy = (
             scoring_policy if scoring_policy is not None else ProviderSelectionPolicy()
         )
         self._retrieval_scorer = LexicalScorer()
-        self._records = self._load(Path(corpus_path))
 
-    @staticmethod
-    def _load(path: Path) -> dict[str, dict]:
-        records: dict[str, dict] = {}
-        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-            if not line.strip():
-                continue
+    def _read_authorized_records(
+        self, context: SourceRequestContext | None
+    ) -> dict[str, dict[str, object]]:
+        now = datetime.now(timezone.utc)
+        if context is None:
+            raise SourceReadError(
+                SourceReadDenial(SourceReadDenialReason.MISSING_CONTEXT)
+            )
+        if type(context) is not SourceRequestContext:
+            raise SourceReadError(
+                SourceReadDenial(SourceReadDenialReason.SCOPE_MISMATCH)
+            )
+        if not all(
+            isinstance(value, str) and value
+            for value in (
+                context.request_id,
+                context.operation_id,
+                context.principal_id,
+                context.tenant_id,
+                context.policy_version,
+            )
+        ) or not isinstance(context.expires_at, datetime):
+            raise SourceReadError(
+                SourceReadDenial(SourceReadDenialReason.SCOPE_MISMATCH)
+            )
+        if context_is_expired(context, now=now):
+            raise SourceReadError(SourceReadDenial(SourceReadDenialReason.EXPIRED))
+        if not self._source_ids:
+            raise SourceReadError(
+                SourceReadDenial(SourceReadDenialReason.UNKNOWN_SOURCE)
+            )
+
+        intents = tuple(
+            SourceReadIntent(source_id=source_id, operation="retrieve")
+            for source_id in self._source_ids
+        )
+        try:
+            opened = DenyAllSourceReadBoundary().open_sources(context, intents)
+        except Exception:
+            # Boundary exceptions may contain paths, content, or internal details.
+            raise SourceReadError(
+                SourceReadDenial(SourceReadDenialReason.STORAGE_FAILURE)
+            ) from None
+        if isinstance(opened, SourceReadDenial):
+            raise SourceReadError(opened)
+        if not isinstance(opened, tuple) or len(opened) != len(intents):
+            self._close_readers(opened if isinstance(opened, tuple) else ())
+            raise SourceReadError(
+                SourceReadDenial(SourceReadDenialReason.SCOPE_MISMATCH)
+            )
+
+        readers = opened
+        expected_by_id = {intent.source_id: intent for intent in intents}
+        leases: list[SourceReadLease] = []
+        for reader in readers:
             try:
-                rec = json.loads(line)
-            except json.JSONDecodeError as exc:
-                raise ValueError(f"{path.name}:{lineno}: invalid JSON") from exc
-            for key in ("passage_id", "source_id", "source_url", "text"):
-                if not isinstance(rec.get(key), str) or not rec[key]:
-                    raise ValueError(f"{path.name}:{lineno}: missing or invalid '{key}'")
-            if rec["passage_id"] in records:
-                raise ValueError(f"{path.name}:{lineno}: duplicate passage_id")
-            records[rec["passage_id"]] = rec
+                lease = getattr(reader, "lease", None)
+            except Exception:
+                self._close_readers(readers)
+                raise SourceReadError(
+                    SourceReadDenial(SourceReadDenialReason.SCOPE_MISMATCH)
+                ) from None
+            if not isinstance(lease, SourceReadLease):
+                self._close_readers(readers)
+                raise SourceReadError(
+                    SourceReadDenial(SourceReadDenialReason.SCOPE_MISMATCH)
+                )
+            intent = expected_by_id.get(lease.source_id)
+            if (
+                intent is None
+                or not all(
+                    isinstance(value, str) and value
+                    for value in (
+                        lease.request_id,
+                        lease.operation_id,
+                        lease.principal_id,
+                        lease.tenant_id,
+                        lease.source_id,
+                        lease.operation,
+                    )
+                )
+                or lease.request_id != context.request_id
+                or lease.operation_id != context.operation_id
+                or lease.principal_id != context.principal_id
+                or lease.tenant_id != context.tenant_id
+                or lease.operation != intent.operation
+                or not isinstance(lease.source_version, str)
+                or not lease.source_version
+                or not isinstance(lease.expires_at, datetime)
+                or lease.expires_at.tzinfo is None
+                or lease.expires_at <= now
+                or (
+                    intent.expected_version is not None
+                    and lease.source_version != intent.expected_version
+                )
+            ):
+                self._close_readers(readers)
+                reason = (
+                    SourceReadDenialReason.EXPIRED
+                    if isinstance(lease, SourceReadLease)
+                    and isinstance(lease.expires_at, datetime)
+                    and lease.expires_at.tzinfo is not None
+                    and lease.expires_at <= now
+                    else SourceReadDenialReason.SCOPE_MISMATCH
+                )
+                raise SourceReadError(SourceReadDenial(reason))
+            leases.append(lease)
+        if {lease.source_id for lease in leases} != set(self._source_ids):
+            self._close_readers(readers)
+            raise SourceReadError(
+                SourceReadDenial(SourceReadDenialReason.SCOPE_MISMATCH)
+            )
+
+        records: dict[str, dict[str, object]] = {}
+        try:
+            for reader, lease in zip(readers, leases):
+                source_id = lease.source_id
+                for raw_record in reader.iter_records():
+                    if not isinstance(raw_record, Mapping):
+                        raise SourceReadError(
+                            SourceReadDenial(
+                                SourceReadDenialReason.INVALID_SOURCE_DATA
+                            )
+                        )
+                    record = dict(raw_record)
+                    for key in ("passage_id", "source_id", "source_url", "text"):
+                        if not isinstance(record.get(key), str) or not record[key]:
+                            raise SourceReadError(
+                                SourceReadDenial(
+                                    SourceReadDenialReason.INVALID_SOURCE_DATA
+                                )
+                            )
+                    if record["source_id"] != source_id:
+                        raise SourceReadError(
+                            SourceReadDenial(SourceReadDenialReason.SCOPE_MISMATCH)
+                        )
+                    passage_id = record["passage_id"]
+                    if passage_id in records:
+                        raise SourceReadError(
+                            SourceReadDenial(
+                                SourceReadDenialReason.INVALID_SOURCE_DATA
+                            )
+                        )
+                    records[passage_id] = record
+        except SourceReadError:
+            raise
+        except Exception:
+            # Suppress storage/parser exception text and paths.
+            raise SourceReadError(
+                SourceReadDenial(SourceReadDenialReason.STORAGE_FAILURE)
+            ) from None
+        finally:
+            self._close_readers(readers)
         return records
 
-    def _retrieve_candidates(self, query: str) -> list[EvidenceCandidate]:
+    @staticmethod
+    def _close_readers(readers: Sequence[object]) -> None:
+        for reader in readers:
+            try:
+                close = getattr(reader, "close", None)
+                if callable(close):
+                    close()
+            except Exception:
+                pass
+
+    def _retrieve_candidates(
+        self, query: str, records: Mapping[str, Mapping[str, object]]
+    ) -> list[EvidenceCandidate]:
         query_tokens = set(self._retrieval_scorer.normalize(query))
         if not query_tokens:
             return []
         return [
             EvidenceCandidate(
-                candidate_id=rec["passage_id"],
-                source_id=rec["source_id"],
-                source_url=rec["source_url"],
-                text=rec["text"],
+                candidate_id=str(record["passage_id"]),
+                source_id=str(record["source_id"]),
+                source_url=str(record["source_url"]),
+                text=str(record["text"]),
             )
-            for rec in self._records.values()
-            if query_tokens & set(self._retrieval_scorer.normalize(rec["text"]))
+            for record in records.values()
+            if query_tokens & set(self._retrieval_scorer.normalize(str(record["text"])))
         ]
 
     def _rank(
         self, candidates: list[EvidenceCandidate], query: str
     ) -> tuple[list[str], dict[str, float], ScoringOutcome]:
         outcome = self._scoring_policy.score_candidates(query, candidates)
-        ranked_ids = select_top_k_scored(
-            candidates, outcome.scores, len(candidates) or 1
-        ) if candidates else []
+        ranked_ids = (
+            select_top_k_scored(candidates, outcome.scores, len(candidates) or 1)
+            if candidates
+            else []
+        )
         scores_by_id = {
             candidate.candidate_id: score
             for candidate, score in zip(candidates, outcome.scores)
@@ -145,6 +317,7 @@ class LocalCorpusRetriever:
         self,
         ranked_ids: list[str],
         scores_by_id: dict[str, float],
+        records: Mapping[str, Mapping[str, object]],
         top_k: int,
         budget_words: int,
     ) -> list[LocalEvidence]:
@@ -153,18 +326,23 @@ class LocalCorpusRetriever:
         for passage_id in ranked_ids:
             if len(selected) >= top_k:
                 break
-            rec = self._records[passage_id]
-            words = len(rec["text"].split())
+            record = records[passage_id]
+            text = str(record["text"])
+            words = len(text.split())
             if words == 0 or words > remaining:
                 continue
             remaining -= words
             selected.append(
                 LocalEvidence(
                     evidence_id=passage_id,
-                    text=rec["text"],
-                    source_id=rec["source_id"],
-                    source_url=rec["source_url"],
-                    section=rec.get("section"),
+                    text=text,
+                    source_id=str(record["source_id"]),
+                    source_url=str(record["source_url"]),
+                    section=(
+                        str(record["section"])
+                        if record.get("section") is not None
+                        else None
+                    ),
                     score=scores_by_id[passage_id],
                     word_count=words,
                 )
@@ -172,7 +350,12 @@ class LocalCorpusRetriever:
         return selected
 
     def retrieve(
-        self, query: str, *, top_k: int = 5, budget_words: int = 500
+        self,
+        query: str,
+        *,
+        request_context: SourceRequestContext | None = None,
+        top_k: int = 5,
+        budget_words: int = 500,
     ) -> LocalRetrievalResult:
         if not isinstance(query, str):
             raise TypeError(f"query must be a string, got {type(query).__name__}")
@@ -182,10 +365,13 @@ class LocalCorpusRetriever:
         _require_positive_int("top_k", top_k)
         _require_positive_int("budget_words", budget_words)
 
-        candidates = self._retrieve_candidates(query)
+        # No lexical fallback is permitted on source-read denial. Content is
+        # available to ranking only after the boundary returns scoped readers.
+        records = self._read_authorized_records(request_context)
+        candidates = self._retrieve_candidates(query, records)
         ranked_ids, scores_by_id, scoring_outcome = self._rank(candidates, query)
         evidence = self._apply_budget(
-            ranked_ids, scores_by_id, top_k, budget_words
+            ranked_ids, scores_by_id, records, top_k, budget_words
         )
 
         if evidence:

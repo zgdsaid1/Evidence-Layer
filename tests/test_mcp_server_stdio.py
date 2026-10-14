@@ -23,19 +23,6 @@ INITIALIZE_PARAMS = {
     "clientInfo": {"name": "test-client", "version": "0.1.0"},
 }
 
-SUCCESS_KEYS = {
-    "status",
-    "query",
-    "top_k",
-    "budget_words",
-    "evidence",
-    "candidate_count",
-    "used_words",
-    "scoring_provider",
-    "scoring_failure_category",
-}
-
-
 def _start():
     env = os.environ.copy()
     existing = env.get("PYTHONPATH")
@@ -129,16 +116,17 @@ def test_notifications_initialized_and_tools_list(server):
     assert [tool["name"] for tool in tools] == ["retrieve_evidence"]
 
 
-def test_tools_call_success(server):
+def test_tools_call_fails_closed_without_classified_source(server):
     _initialize(server)
     _notify_initialized(server)
     response = _call_tool(server, 3, {"query": "btree index"})
     data = _tool_text(response)
-    assert set(data.keys()) == SUCCESS_KEYS
-    assert data["status"] == "ok"
-    assert data["evidence"]
-    assert len(data["evidence"]) <= data["top_k"]
-    assert data["used_words"] <= data["budget_words"]
+    assert data == {
+        "error": {
+            "code": "source_unavailable",
+            "message": "local source is unavailable",
+        }
+    }
 
 
 def test_tools_call_invalid_argument_returns_adapter_error(server):
@@ -222,19 +210,19 @@ def test_startup_log_goes_to_stderr_not_stdout(server):
     assert "starting evidence layer MCP stdio server" in server.stderr.read()
 
 
-def test_corpus_error_is_returned_as_tool_result(monkeypatch):
+def test_source_denial_is_returned_as_tool_result(monkeypatch):
     import evidence_layer.mcp.server as server_mod
 
     monkeypatch.setattr(
         server_mod,
         "retrieve_evidence",
         lambda *a, **k: {
-            "error": {"code": "corpus_unavailable", "message": "local corpus is unavailable"}
+            "error": {"code": "source_unavailable", "message": "local source is unavailable"}
         },
     )
     result = server_mod.retrieve_evidence_tool("btree index")
     assert result == {
-        "error": {"code": "corpus_unavailable", "message": "local corpus is unavailable"}
+        "error": {"code": "source_unavailable", "message": "local source is unavailable"}
     }
 
 
