@@ -3,6 +3,8 @@
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 import os
+import subprocess
+import sys
 
 import pytest
 
@@ -82,6 +84,69 @@ def test_registered_synthetic_source_opens_fixed_fixture_and_returns_provenance(
         or "btree" in str(record["text"]).casefold()
         for record in records
     )
+
+
+def test_close_closes_suspended_iterator_and_prevents_more_reads():
+    reader = SyntheticFixtureReadBoundary().open_sources(
+        _context(), (_intent(),)
+    )[0]
+    iterator = reader.iter_records()
+    first_record = next(iterator)
+    stream = reader._stream
+    assert first_record["source_id"] == SYNTHETIC_SOURCE_ID
+    assert stream is not None and not stream.closed
+    descriptor = stream.fileno()
+
+    reader.close()
+
+    assert stream.closed
+    assert reader._stream is None
+    with pytest.raises(OSError):
+        os.fstat(descriptor)
+    with pytest.raises(OSError, match="closed"):
+        next(iterator)
+    with pytest.raises(OSError, match="closed"):
+        next(reader.iter_records())
+    reader.close()
+
+
+def test_iteration_closes_stream_at_end_and_after_read_exception(monkeypatch):
+    reader = SyntheticFixtureReadBoundary().open_sources(
+        _context(), (_intent(),)
+    )[0]
+    iterator = reader.iter_records()
+    next(iterator)
+    completed_stream = reader._stream
+    assert completed_stream is not None
+    completed_descriptor = completed_stream.fileno()
+
+    list(iterator)
+
+    assert completed_stream.closed
+    assert reader._stream is None
+    with pytest.raises(OSError):
+        os.fstat(completed_descriptor)
+
+    reader = SyntheticFixtureReadBoundary().open_sources(
+        _context(), (_intent(),)
+    )[0]
+    iterator = reader.iter_records()
+    next(iterator)
+    failed_stream = reader._stream
+    assert failed_stream is not None
+    failed_descriptor = failed_stream.fileno()
+
+    def fail_to_parse(_line):
+        raise ValueError("synthetic parser failure")
+
+    monkeypatch.setattr(synthetic_fixtures.json, "loads", fail_to_parse)
+    with pytest.raises(ValueError, match="synthetic parser failure"):
+        next(iterator)
+
+    assert failed_stream.closed
+    assert reader._stream is None
+    with pytest.raises(OSError):
+        os.fstat(failed_descriptor)
 
 
 @pytest.mark.parametrize(
@@ -224,6 +289,93 @@ def test_symlinked_final_fixture_directory_is_rejected_without_opening_file(
         assert calls == []
     else:
         assert calls == [(os.fspath(directory_link), None)]
+
+
+def test_missing_nonblocking_open_support_fails_closed_before_open(monkeypatch):
+    calls = _track_opens(monkeypatch)
+    monkeypatch.delattr(synthetic_fixtures.os, "O_NONBLOCK", raising=False)
+
+    result = SyntheticFixtureReadBoundary().open_sources(_context(), (_intent(),))
+
+    assert isinstance(result, SourceReadDenial)
+    assert result.reason is SourceReadDenialReason.STORAGE_FAILURE
+    assert calls == []
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="FIFO creation is unavailable")
+def test_fifo_fixture_is_rejected_without_blocking_or_lexical_fallback(tmp_path):
+    fixture_directory = tmp_path / "fixtures"
+    fixture_directory.mkdir()
+    os.mkfifo(fixture_directory / "synthetic_evidence.jsonl")
+
+    child = r"""
+import os
+import sys
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+from evidence_layer.retrieval import synthetic_fixtures
+from evidence_layer.retrieval.local_corpus import LocalCorpusRetriever
+from evidence_layer.source_access import (
+    SourceReadDenialReason,
+    SourceReadError,
+    SourceRequestContext,
+)
+
+synthetic_fixtures._FIXTURE_DIRECTORY = Path(sys.argv[1])
+retriever = LocalCorpusRetriever.for_synthetic_development_fixture()
+def forbidden_fallback(*_args, **_kwargs):
+    raise AssertionError("lexical fallback ran after source-read denial")
+retriever._retrieve_candidates = forbidden_fallback
+context = SourceRequestContext(
+    request_id="fifo-request",
+    operation_id="fifo-operation",
+    principal_id="synthetic-test-principal",
+    tenant_id="synthetic-test-tenant",
+    policy_version="synthetic-fixture-policy-v1",
+    expires_at=datetime.now(timezone.utc) + timedelta(minutes=1),
+)
+supports_safe_open = all(
+    bool(getattr(os, flag, 0))
+    for flag in ("O_NOFOLLOW", "O_DIRECTORY", "O_NONBLOCK")
+)
+expected = (
+    SourceReadDenialReason.INVALID_SOURCE_DATA
+    if supports_safe_open
+    else SourceReadDenialReason.STORAGE_FAILURE
+)
+try:
+    retriever.retrieve("synthetic FIFO query", request_context=context)
+except SourceReadError as error:
+    assert error.denial.reason is expected, error.denial.reason
+else:
+    raise AssertionError("FIFO source unexpectedly returned evidence")
+print("bounded denial")
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", child, os.fspath(fixture_directory)],
+        cwd=os.path.dirname(os.path.dirname(__file__)),
+        env={
+            **os.environ,
+            "PYTHONPATH": os.pathsep.join(
+                item
+                for item in (
+                    os.path.abspath(
+                        os.path.join(os.path.dirname(__file__), os.pardir, "src")
+                    ),
+                    os.environ.get("PYTHONPATH"),
+                )
+                if item is not None
+            ),
+        },
+        capture_output=True,
+        text=True,
+        timeout=5,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "bounded denial"
 
 
 def test_denial_details_do_not_disclose_source_or_path():

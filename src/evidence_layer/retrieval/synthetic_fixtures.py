@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from types import MappingProxyType
+from typing import TextIO
 
 from evidence_layer.source_access import (
     SourceReadDenial,
@@ -60,23 +61,59 @@ _SYNTHETIC_SOURCE_CATALOG = MappingProxyType(
 class _JsonlFixtureReader:
     def __init__(self, descriptor: int, lease: SourceReadLease) -> None:
         self._descriptor: int | None = descriptor
+        self._stream: TextIO | None = None
+        self._iteration_started = False
+        self._closed = False
         self.lease = lease
 
     def iter_records(self) -> Iterable[Mapping[str, object]]:
+        if self._closed or self._iteration_started:
+            raise OSError("fixture reader is closed")
         descriptor = self._descriptor
         if descriptor is None:
             raise OSError("fixture reader is closed")
+        self._iteration_started = True
         self._descriptor = None
-        with os.fdopen(descriptor, "r", encoding="utf-8") as stream:
-            for line in stream:
+        try:
+            stream = os.fdopen(descriptor, "r", encoding="utf-8")
+        except BaseException:
+            self._closed = True
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+            raise
+        self._stream = stream
+        try:
+            while True:
+                if self._closed:
+                    raise OSError("fixture reader is closed")
+                line = stream.readline()
+                if not line:
+                    return
                 if line.strip():
                     yield json.loads(line)
+        finally:
+            self._close_stream(stream)
 
     def close(self) -> None:
+        self._closed = True
+        stream = self._stream
+        self._stream = None
+        if stream is not None and not stream.closed:
+            stream.close()
+
         descriptor = self._descriptor
         self._descriptor = None
         if descriptor is not None:
             os.close(descriptor)
+
+    def _close_stream(self, stream: TextIO) -> None:
+        self._closed = True
+        if self._stream is stream:
+            self._stream = None
+        if not stream.closed:
+            stream.close()
 
 
 class SyntheticFixtureReadBoundary:
@@ -192,10 +229,21 @@ class SyntheticFixtureReadBoundary:
 
     @staticmethod
     def _open_fixed_fixture(filename: str) -> int:
-        """Open only the catalog filename, rejecting directory/file symlinks."""
+        """Open only the fixed file, rejecting symlinks and blocking targets.
+
+        Platforms without the required no-follow, directory, or nonblocking
+        flags fail closed before opening the fixture.
+        """
         nofollow = getattr(os, "O_NOFOLLOW", None)
         directory_flag = getattr(os, "O_DIRECTORY", None)
-        if nofollow is None or directory_flag is None or filename != _FIXTURE_FILENAME:
+        nonblocking = getattr(os, "O_NONBLOCK", None)
+        if (
+            nofollow is None
+            or directory_flag is None
+            or nonblocking is None
+            or not nonblocking
+            or filename != _FIXTURE_FILENAME
+        ):
             raise OSError("safe fixture open is unavailable")
 
         common_flags = os.O_RDONLY | nofollow | getattr(os, "O_CLOEXEC", 0)
@@ -203,6 +251,8 @@ class SyntheticFixtureReadBoundary:
             os.fspath(_FIXTURE_DIRECTORY), common_flags | directory_flag
         )
         try:
-            return os.open(filename, common_flags, dir_fd=directory_fd)
+            return os.open(
+                filename, common_flags | nonblocking, dir_fd=directory_fd
+            )
         finally:
             os.close(directory_fd)
