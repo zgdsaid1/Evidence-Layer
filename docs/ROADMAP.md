@@ -18,7 +18,7 @@ citations and safe refusal.
 Platform-managed provider keys must never be exposed to users, clients,
 MCP responses, logs, or browser storage.
 
-User-provided keys are a later Pro+ and Enterprise capability, with strict
+User-provided keys are a later Pro Plus and Enterprise capability, with strict
 encryption, isolation, rotation, and audit requirements.
 
 ## 3. Intelligence architecture
@@ -64,11 +64,14 @@ Decisions unavailability, timeout, or invalid output uses the same safe
 deterministic fallback. This routing fallback is separate from evidence-scoring
 fallback.
 
-## 4. Strategic principle: SaaS is the long-term goal and is built incrementally
+## 4. Strategic principle: Flexible by design. Extensible for the future.
 
 SaaS is the long-term product goal and is built incrementally. Each phase ships
 a concrete, testable artifact that validates a hypothesis before the next
-phase expands scope. Scope is not added ahead of validation.
+phase expands scope. Evidence Layer should remain flexible as needs change and
+gain capabilities through deliberate, compatible extensions rather than
+premature complexity. The architecture implications are described in
+[ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## 5. North-star metric
 
@@ -84,9 +87,9 @@ injecting a JEV policy. The retriever's current default source-read boundary
 denies before corpus content is opened, so the tool does not return corpus
 evidence absent a future trusted source boundary. Live JEV transfer is
 hard-denied on supported package paths; injected dependencies do not enable it.
-The separate local FastAPI service is health-only (`GET /healthz`) and is not
-part of corpus retrieval or a hosted deployment. The MCP tool provides strict
-request validation and safe errors over stdio.
+The separate FastAPI service is deployed on Railway and is health-only
+(`GET /healthz`); it is not part of corpus retrieval or a customer-data service.
+The MCP tool provides strict request validation and safe errors over stdio.
 
 ## 7. Phase 1 — Prove evidence-selection value
 
@@ -215,13 +218,17 @@ The platform is responsible for:
 | Plan | JEV scoring | Decisions routing | User API keys | Target user |
 |---|---|---|---|---|
 | Free | Platform-managed | Platform-managed | No | Individual evaluation and light use |
-| Pro | Platform-managed | Platform-managed | No | Regular individual and small-team use |
-| Pro+ | Platform-managed or BYOK | BYOK | Yes | Advanced users needing control |
+| Pro | Platform-managed | Platform-managed | No | Individual workspace (proposal) |
+| Pro Plus | Platform-managed or BYOK | BYOK | Yes | Team or multi-member workspace (proposal) |
 | Enterprise | BYOK or private deployment | BYOK or private deployment | Yes | Organizations with compliance needs |
 
-Pro+ and Enterprise are part of the later launch strategy. The initial product
-focus is Free and Pro, but the Phase 5 beta uses free-tier limits; paid Pro
-billing begins in Phase 6.
+Pro Plus and Enterprise are part of the later launch strategy. The initial
+product focus is Free and Pro, but the Phase 5 beta uses free-tier limits; paid
+Pro billing begins in Phase 6. Workspace mapping is a proposal, not an
+implemented capability or commercial commitment: Pro proposes an individual
+workspace and Pro Plus proposes a team or multi-member workspace. No pricing,
+numeric quota values, member limits, or team-management capabilities are
+approved or implemented.
 
 ### Provider resilience
 
@@ -248,7 +255,7 @@ exposed in MCP responses or stdout.
 Platform-managed provider keys must never be exposed to users, clients,
 MCP responses, logs, or browser storage.
 
-User-provided keys are a later Pro+ and Enterprise capability, with strict
+User-provided keys are a later Pro Plus and Enterprise capability, with strict
 encryption, isolation, rotation, and audit requirements.
 
 ## 14. Differentiating capabilities

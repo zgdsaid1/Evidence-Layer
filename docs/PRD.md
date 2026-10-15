@@ -8,8 +8,22 @@ task query and candidate passages, ranks evidence, and returns a compact
 evidence set with provenance and usage metadata.
 
 **Product intent:** a hosted SaaS product with an MCP interface, not only a
-Python library. The current repository is still the Python scoring and
-evaluation foundation; this PRD describes the target product.
+Python library. The repository includes the Python scoring and evaluation
+foundation plus a synthetic-only Next.js Evidence Explorer prototype; its
+production deployment from `main` on Vercel is confirmed. The UI prototype is
+not the hosted SaaS product or a customer-data service.
+
+## Product Identity
+
+- The official product name is **Evidence Layer**.
+- The existing text wordmark/name and current interface color palette in
+  `apps/web/app/globals.css` are the accepted visual identity for now.
+- The pencil SVG mark was removed from the header and sidebar. Do not add a
+  replacement icon, placeholder logo, or new visual redesign as part of this
+  identity decision.
+- A standalone symbol is deferred until a meaningful mark can express evidence
+  tracing, source verification, and claim-to-evidence relationships. No
+  separate logo asset or new icon system is defined.
 
 ## Problem
 
@@ -121,14 +135,17 @@ answer generation.
 
 ### Plans and usage
 
-- Phase 5 free-tier usage-limit targets: 500 requests and 200K JEV tokens.
-- Illustrative Pro pricing target: $19/month, with 3,000 requests and 2M
-  JEV tokens. This is an estimate for planning, not an approved final price.
-  Pricing, quota periods, token accounting, and paid-plan enforcement remain
-  subject to explicit product decisions.
+- A Pro individual Workspace and a Pro Plus team or multi-member Workspace are
+  proposals only; see the [canonical Roadmap](ROADMAP.md). No pricing, numeric
+  quota values, member limits, or team-management capabilities are approved or
+  implemented.
+- Phase 5 usage metering and safety limits remain targets, but no numeric
+  limits or periods are approved. Paid-plan terms and quota enforcement require
+  separate product decisions.
 - Decisions routing metering, cost limits, and their relationship to JEV
   metering remain open for a future explicit decision.
-- Phase 6 target: Stripe subscription billing and $5 credit packs.
+- Phase 6 targets Stripe subscription billing and possible credit packs; their
+  amounts and commercial terms are undecided.
 - Enforce entitlements server-side, record usage once per request, and expose
   clear usage/error states.
 - Product decisions still required: quota period, what counts as a request,
@@ -180,19 +197,21 @@ model, and measurement window for each metric before launch reporting.
 The repository has schemas, local corpus retrieval, JEV and lexical scoring
 under the provider-selection policy, an evaluation harness, and a historical
 held-out single-run evaluation whose predeclared outcome was Inconclusive. It
-currently implements a local stdio MCP server (`retrieve_evidence`) whose
-standard path is lexical-only. Remote scoring requires a trusted, appropriately
-scoped authorization boundary. It does not yet implement the hosted HTTP
-service, hosted authentication or tenant-isolation enforcement, production
-database or RLS, hosted provider-transfer authorization, production connectors,
-dashboard, billing, or Google Drive connector. The source router and Decisions
-API client are planned work, not implemented. The `services/evidence-service/`
-directory contains a local health-only FastAPI service exposing `GET /healthz`;
-it has no customer operations and is not a hosted deployment. The current
-corpus retriever denies source reads by default, and live JEV transfer is
-hard-denied on supported package paths. Final answer generation remains with
-the caller's model. No production readiness, savings, or generalization claim
-is established.
+implements a local stdio MCP server (`retrieve_evidence`) whose standard path
+is lexical-only, and a synthetic-only Next.js Evidence Explorer prototype
+deployed from `main` on Vercel. The prototype does not have backend
+integration or customer operations. Remote scoring requires a trusted,
+appropriately scoped authorization boundary. The hosted HTTP MCP service,
+hosted authentication or tenant-isolation enforcement, production database or
+RLS, hosted provider-transfer authorization, production connectors, SaaS
+dashboard capabilities, billing, and Google Drive connector are not
+implemented. The source router and Decisions API client are planned work, not
+implemented. The health-only FastAPI service at `services/evidence-service/`
+is deployed on Railway and exposes only `GET /healthz`; it has no customer
+operations. The current corpus retriever denies source reads by default, and
+live JEV transfer is hard-denied on supported package paths. Final answer
+generation remains with the caller's model. No production readiness, savings,
+or generalization claim is established.
 
 ## Open Product Decisions
 

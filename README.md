@@ -26,18 +26,21 @@ boundary. Remote scoring requires a separate trusted, appropriately scoped
 provider-transfer authorization boundary. The historical held-out comparison
 was **Inconclusive**.
 
-A local stdio MCP server (`retrieve_evidence`) is implemented. The hosted SaaS
-product layer is not implemented: there is no hosted HTTP MCP service, hosted
-authentication, per-user tenant-isolation enforcement, database/RLS, hosted
-provider-transfer authorization, frontend/dashboard, billing, or production
-source connector. A local health-only FastAPI service now exists at
-`services/evidence-service/`; it exposes only `GET /healthz` and does not perform
-customer operations or read evidence. It is not a deployed hosted service. The
+A local stdio MCP server (`retrieve_evidence`) is implemented. A Next.js
+Evidence Explorer prototype also exists in `apps/web/`; it uses synthetic
+fixture data only, and its production deployment from `main` on Vercel is
+confirmed. It is a UI prototype, not an authenticated SaaS dashboard or a
+customer-data service. The hosted SaaS product layer remains unimplemented:
+there is no hosted HTTP MCP service, hosted authentication, per-user
+tenant-isolation enforcement, database/RLS, hosted provider-transfer
+authorization, billing, or production source connector. The health-only FastAPI
+service at `services/evidence-service/` is deployed on Railway and exposes only
+`GET /healthz`; it does not perform customer operations or read evidence. The
 planned target architecture is Vercel/Next.js for the frontend, Supabase for
 backend services, Railway for the persistent HTTP MCP server, JEV for evidence
 scoring, and the OpenAI Decisions API for complex source routing. The source
 router and Decisions client are planned work and do not exist yet. This is a
-target design, not a description of deployed services. Decisions is required
+target design, not a description of completed SaaS capabilities. Decisions is required
 for complex routing; simple queries may route deterministically. Router and
 Decisions can select only from the authorized source catalog and cannot grant
 permissions, bypass tenant boundaries, or authorize external transfers. If
