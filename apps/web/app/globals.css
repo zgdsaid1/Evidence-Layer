@@ -90,7 +90,6 @@ select:focus-visible,
   --sidebar-ink: #363831;
   --sidebar-muted: #6a6c64;
   --sidebar-line: #d8d4c9;
-  --sidebar-mint: #74d3b8;
 
   position: sticky;
   top: 0;
@@ -108,12 +107,6 @@ select:focus-visible,
   color: var(--sidebar-ink);
 }
 
-.sidebar .brand-mark {
-  border-color: var(--sidebar-ink);
-  background: var(--sidebar-ink);
-  color: var(--sidebar-mint);
-}
-
 .sidebar .brand-name span {
   color: var(--sidebar-ink);
 }
@@ -122,28 +115,8 @@ select:focus-visible,
   display: inline-flex;
   width: fit-content;
   align-items: center;
-  gap: 11px;
   color: var(--paper);
   text-decoration: none;
-}
-
-.brand-mark {
-  display: grid;
-  width: 34px;
-  height: 34px;
-  place-items: center;
-  border: 1px solid rgb(109 224 192 / 55%);
-  border-radius: 10px 10px 10px 3px;
-  background: rgb(109 224 192 / 9%);
-  color: var(--mint);
-}
-
-.brand-mark svg {
-  width: 25px;
-  stroke: currentColor;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 1.5;
 }
 
 .brand-name {
@@ -1620,12 +1593,6 @@ select:focus-visible,
 
   .mobile-bar .brand-lockup {
     color: #363831;
-  }
-
-  .mobile-bar .brand-mark {
-    border-color: #363831;
-    background: #363831;
-    color: var(--mint);
   }
 
   .mobile-bar .brand-name span {
