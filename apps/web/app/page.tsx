@@ -17,18 +17,6 @@ const NODE_POSITIONS: Record<string, { x: number; y: number }> = {
   "EV-SYN-036": { x: 646, y: 78 },
 };
 
-function BrandMark() {
-  return (
-    <span aria-hidden="true" className="brand-mark">
-      <svg viewBox="0 0 32 32" fill="none">
-        <path d="M5 7.5h12.5L27 16l-9.5 8.5H5" />
-        <path d="M5 12h9.5M5 20h9.5" />
-        <circle cx="23.5" cy="16" r="2" />
-      </svg>
-    </span>
-  );
-}
-
 function SearchIcon() {
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24" fill="none">
@@ -340,7 +328,6 @@ export default function Home() {
 
       <div className="mobile-bar">
         <a className="brand-lockup" href="#explorer" aria-label="Evidence Layer home">
-          <BrandMark />
           <span className="brand-name">evidence<span>layer</span></span>
         </a>
         <button
@@ -365,7 +352,6 @@ export default function Home() {
         }}
       >
         <a className="brand-lockup brand-lockup--sidebar" href="#explorer" aria-label="Evidence Layer home" onClick={() => navigateToSection("explorer")}>
-          <BrandMark />
           <span className="brand-name">evidence<span>layer</span></span>
         </a>
 
