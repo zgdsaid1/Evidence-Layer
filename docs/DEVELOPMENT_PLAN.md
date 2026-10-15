@@ -1,9 +1,9 @@
 # Evidence Layer Development Plan
 
-This is the living development roadmap for the intended Evidence Layer SaaS.
-It distinguishes the implementation currently in this repository from the
-approved product direction. Planned infrastructure and product features below
-are not yet implemented or deployed.
+This is the living development plan for the intended Evidence Layer SaaS. It
+distinguishes current implementation and deployments from the approved product
+direction. Future product capabilities are identified separately from what is
+already present.
 
 ## Current Status
 
@@ -23,16 +23,20 @@ are not yet implemented or deployed.
   evaluation decision in ADR 0001 is superseded as
   architecture guidance, while its measurements remain historical.
 - **A local stdio MCP server is implemented** and exposes `retrieve_evidence`.
-  The hosted HTTP service, hosted authentication and tenant-isolation
-  enforcement, production database/RLS, hosted provider-transfer authorization,
-  frontend/dashboard, billing, production connectors, source router, and
-  Decisions API client do not yet exist in this repository. Final answer
-  generation remains with the caller's model.
+  Hosted HTTP MCP, hosted authentication and tenant-isolation enforcement,
+  production database/RLS, hosted provider-transfer authorization, SaaS
+  dashboard capabilities, billing, production connectors, source router, and
+  Decisions API client do not yet exist in this repository. A synthetic-only
+  Next.js Evidence Explorer prototype exists at `apps/web/` and its production
+  deployment from `main` on Vercel is confirmed; it has no backend integration
+  or customer operations. Final answer generation remains with the caller's
+  model.
 
-`services/evidence-service/` contains a local, health-only FastAPI app with a
-`GET /healthz` endpoint. It is separate from the implemented local MCP stdio
-server and does not provide hosted authentication, retrieval, customer
-operations, or provider integration. Railway remains a future deployment target.
+`services/evidence-service/` contains a health-only FastAPI app deployed on
+Railway with a `GET /healthz` endpoint. It is separate from the implemented
+local MCP stdio server and does not provide hosted authentication, retrieval,
+customer operations, or provider integration. A persistent MCP service remains
+future work.
 
 `LocalCorpusRetriever` is implemented, but its current default source-read
 boundary denies before opening corpus content. The retrieval code is designed
@@ -51,13 +55,17 @@ workloads.
 
 ## Approved Target Architecture
 
-This is the intended architecture, not infrastructure already present in the
-repository:
+This is the intended architecture. Current deployments are identified below;
+the remaining platform components are not infrastructure already present in
+the repository:
 
-- **Vercel:** Planned Next.js dashboard; it is not implemented.
+- **Vercel:** A synthetic-only Next.js Evidence Explorer prototype is
+  implemented and deployed from `main`; SaaS dashboard capabilities remain
+  planned.
 - **Supabase:** Backend services using Postgres, pgvector, Auth, and Edge
   Functions.
-- **Railway:** Persistent MCP server process only.
+- **Railway:** The health-only Python service is deployed; a persistent MCP
+  server remains planned.
 - **JEV:** Intended primary TypeSafe-backed evidence-scoring and ranking
   provider only when explicitly enabled and permitted by policy. Before sending
   query or candidate text, the trusted server must separately authorize that
@@ -135,7 +143,8 @@ connector, usage controls, billing, and an A/B comparison experience.
 
 - Add Free and Pro usage entitlements and enforce them server-side.
 - Integrate Stripe subscriptions and billing lifecycle events.
-- Add $5 credit packs with clear, auditable consumption rules.
+- Define any future credit-pack terms and auditable consumption rules before
+  implementation; no amount is approved.
 - Do not treat estimates of model cost as customer invoices or margin proof.
 
 ### Phase 4 — Comparison Lab and beta
@@ -157,17 +166,17 @@ connector, usage controls, billing, and an A/B comparison experience.
   implementation is not in the current PR scope.
 - Supabase storage for documents, chunks, and usage tracking.
 - Google Drive connector.
-- Phase 5 free-tier usage targets: **500 requests** and **200K JEV tokens**;
-  usage limits and metering do not imply payment collection.
+- Phase 5 usage metering and safety limits; no numeric quota values or periods
+  are approved. Usage limits and metering do not imply payment collection.
 - Comparison Lab with “Run A/B”.
 
-Plan quota values are product requirements, not current implemented limits.
-Their billing period, overage behavior, token accounting, and credit
-consumption semantics must be specified before implementation.
+No numeric plan quota values are approved or implemented. Billing periods,
+overage behavior, token accounting, and credit consumption semantics remain
+open product decisions.
 
-Paid Pro, Stripe subscription billing, and **$5 credit packs** are Phase 6
-targets under the canonical roadmap, outside the Phase 5 beta MVP. Their
-pricing, periods, and accounting rules remain open product decisions.
+Paid Pro, Stripe subscription billing, and possible credit packs are Phase 6
+targets under the canonical roadmap, outside the Phase 5 beta MVP. Pricing,
+amounts, periods, and accounting rules remain open product decisions.
 
 ### Out of scope
 

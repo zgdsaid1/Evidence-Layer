@@ -80,13 +80,15 @@ is accessed.
 
 This ADR records accepted target architecture requirements; it does not claim
 that their production controls or services are implemented. The repository has
-a local Python evidence core and a local stdio MCP server. The standard MCP/
-stdio path remains lexical-only; remote scoring is permitted only where a
-trusted, appropriately scoped authorization boundary explicitly allows it. The
-hosted service, hosted authentication and tenant isolation, production source
-connectors, hosted provider-transfer authorization, production Decisions
-integration, hosted deployment, hosted database/RLS, dashboard, and billing
-are not implemented.
+a local Python evidence core, a local stdio MCP server, and a synthetic-only
+Next.js Evidence Explorer prototype deployed from `main` on Vercel. A separate
+health-only FastAPI service is deployed on Railway. The standard MCP/stdio path
+remains lexical-only; remote scoring is permitted only where a trusted,
+appropriately scoped authorization boundary explicitly allows it. The hosted
+customer-data service, hosted authentication and tenant isolation, production
+source connectors, hosted provider-transfer authorization, production
+Decisions integration, hosted database/RLS, SaaS dashboard capabilities, and
+billing are not implemented.
 
 The canonical roadmap's Phase 5 SaaS beta requires authentication and
 mandatory per-user tenant isolation that protects each user's data. Phase 6 adds
