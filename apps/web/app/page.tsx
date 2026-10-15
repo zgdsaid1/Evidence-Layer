@@ -323,6 +323,7 @@ export default function Home() {
   }
 
   function selectRecord(id: string) {
+    if (!records.some((record) => record.id === id)) clearFilters();
     setSelectedId(id);
     setInquiryTopic(null);
     setMenuOpen(false);
@@ -410,7 +411,7 @@ export default function Home() {
       <div className="main-column">
         <header className="topbar">
           <div className="breadcrumb"><span>Workspace</span><span aria-hidden="true">/</span><strong>Evidence Explorer</strong></div>
-          <div className="topbar-state"><span className="status-dot" aria-hidden="true" />Local prototype <span className="topbar-divider" /> Synthetic data only</div>
+          <div className="topbar-state"><span className="status-dot" aria-hidden="true" />Local prototype <span className="topbar-divider" /> <span>Synthetic data only</span></div>
         </header>
 
         <main id="explorer" className="page-content">
