@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import ThemeToggle from "./theme-toggle";
 import {
   filterEvidence,
   SAMPLE_EVIDENCE,
@@ -16,6 +17,44 @@ const NODE_POSITIONS: Record<string, { x: number; y: number }> = {
   "EV-SYN-031": { x: 466, y: 78 },
   "EV-SYN-036": { x: 646, y: 78 },
 };
+
+const RECORD_BY_ID = new Map(SAMPLE_EVIDENCE.map((record) => [record.id, record]));
+const RELATIONSHIPS_BY_RECORD_ID = new Map<string, EvidenceRelationship[]>(
+  SAMPLE_EVIDENCE.map((record) => [record.id, []]),
+);
+
+for (const relation of SAMPLE_RELATIONSHIPS) {
+  RELATIONSHIPS_BY_RECORD_ID.get(relation.from)?.push(relation);
+  RELATIONSHIPS_BY_RECORD_ID.get(relation.to)?.push(relation);
+}
+
+const NO_RELATIONSHIPS: readonly EvidenceRelationship[] = [];
+
+function relationshipsForRecord(recordId: string | null): readonly EvidenceRelationship[] {
+  return recordId ? RELATIONSHIPS_BY_RECORD_ID.get(recordId) ?? NO_RELATIONSHIPS : NO_RELATIONSHIPS;
+}
+
+function relationshipStateForRecord(
+  recordId: string,
+  activeRecordId: string | null,
+  relatedRecordIds: ReadonlySet<string>,
+): "active" | "related" | null {
+  if (recordId === activeRecordId) return "active";
+  return relatedRecordIds.has(recordId) ? "related" : null;
+}
+
+function dotGridSurfaceClassName(
+  className: string,
+  state: "active" | "related" | null,
+  interactive = false,
+) {
+  return [
+    className,
+    "dot-grid-surface",
+    interactive ? "dot-grid-surface--interactive" : null,
+    state ? "is-" + state : null,
+  ].filter(Boolean).join(" ");
+}
 
 function SearchIcon() {
   return (
@@ -59,7 +98,7 @@ function relationLabel(kind: EvidenceRelationship["kind"]) {
   return kind === "conflict" ? "Conflicting accounts" : "Definition gap";
 }
 
-function relationshipQuestion(relations: EvidenceRelationship[]) {
+function relationshipQuestion(relations: readonly EvidenceRelationship[]) {
   const includesConflict = relations.some((relation) => relation.kind === "conflict");
   const includesContextGap = relations.some((relation) => relation.kind === "context-gap");
 
@@ -94,7 +133,7 @@ type InquiryTopic = "observed" | "unknown" | "relationships";
 function inquiryAnswer(
   topic: InquiryTopic,
   record: EvidenceRecord,
-  relations: EvidenceRelationship[],
+  relations: readonly EvidenceRelationship[],
 ): { question: string; answer: string; references: string[] } {
   if (topic === "observed") {
     return {
@@ -112,10 +151,9 @@ function inquiryAnswer(
     };
   }
 
-  const recordById = new Map(SAMPLE_EVIDENCE.map((item) => [item.id, item]));
   const relatedRecords = relations.map((relation) => {
     const relatedId = relation.from === record.id ? relation.to : relation.from;
-    const relatedRecord = recordById.get(relatedId);
+    const relatedRecord = RECORD_BY_ID.get(relatedId);
     return {
       id: relatedId,
       sourceRef: relatedRecord?.sourceRef ?? "Reference unavailable in this sample",
@@ -132,30 +170,38 @@ function inquiryAnswer(
 
 function RelationshipMap({
   selectedId,
+  activeRecordId,
+  activeRelationships,
+  relatedRecordIds,
   onSelect,
+  onHoverRecord,
+  onFocusRecord,
 }: {
   selectedId: string | null;
+  activeRecordId: string | null;
+  activeRelationships: readonly EvidenceRelationship[];
+  relatedRecordIds: ReadonlySet<string>;
   onSelect: (id: string) => void;
+  onHoverRecord: (id: string | null) => void;
+  onFocusRecord: (id: string | null) => void;
 }) {
-  const recordById = new Map(SAMPLE_EVIDENCE.map((record) => [record.id, record]));
+  const displayedRelations = activeRecordId ? activeRelationships : SAMPLE_RELATIONSHIPS;
+  const activeRelationshipIds = new Set(activeRelationships.map((relation) => relation.id));
   const selectedRelations = selectedId
-    ? SAMPLE_RELATIONSHIPS.filter((relation) => relation.from === selectedId || relation.to === selectedId)
-    : SAMPLE_RELATIONSHIPS;
-  const connectedIds = new Set(
-    selectedRelations.flatMap((relation) => [relation.from, relation.to]),
-  );
+    ? relationshipsForRecord(selectedId)
+    : NO_RELATIONSHIPS;
 
   return (
     <section className="relationship-panel" id="relationships" aria-labelledby="relationships-title">
       <div className="relationship-heading">
         <div>
-          <p className="eyebrow eyebrow--light">Evidence links / fixture-defined</p>
+          <p className="eyebrow">Evidence links / fixture-defined</p>
           <h2 id="relationships-title">
-            {selectedId ? `Links around ${selectedId}` : "Relationships to inspect"}
+            {activeRecordId ? `Links around ${activeRecordId}` : "Relationships to inspect"}
           </h2>
         </div>
         <span className="map-count">
-          {selectedId ? `${selectedRelations.length} linked records` : `${SAMPLE_RELATIONSHIPS.length} links · ${SAMPLE_EVIDENCE.length} records`}
+          {activeRecordId ? `${activeRelationships.length} linked records` : `${SAMPLE_RELATIONSHIPS.length} links · ${SAMPLE_EVIDENCE.length} records`}
         </span>
         <span className="visually-hidden" role="status" aria-live="polite">
           {selectedId
@@ -170,16 +216,16 @@ function RelationshipMap({
         aria-label="Evidence relationship map. Scroll horizontally to inspect all records."
         tabIndex={0}
       >
-        <div className="map-stage">
+        <div className="map-stage dot-grid-surface">
           <svg className="map-lines" viewBox="0 0 720 250" aria-hidden="true">
             {SAMPLE_RELATIONSHIPS.map((relation) => {
               const from = NODE_POSITIONS[relation.from];
               const to = NODE_POSITIONS[relation.to];
-              const isRelevant = selectedRelations.some((item) => item.id === relation.id);
+              const isRelevant = activeRelationshipIds.has(relation.id);
               return (
                 <line
                   key={relation.id}
-                  className={`map-line map-line--${relation.kind}${selectedId && !isRelevant ? " is-dimmed" : ""}`}
+                  className={`map-line map-line--${relation.kind}${isRelevant ? " is-active" : ""}${activeRecordId && !isRelevant ? " is-dimmed" : ""}`}
                   x1={from.x}
                   y1={from.y}
                   x2={to.x}
@@ -193,12 +239,23 @@ function RelationshipMap({
             {SAMPLE_EVIDENCE.map((record) => {
               const point = NODE_POSITIONS[record.id];
               const isSelected = selectedId === record.id;
-              const isDimmed = selectedId !== null && !connectedIds.has(record.id);
+              const relationshipState = relationshipStateForRecord(record.id, activeRecordId, relatedRecordIds);
+              const isActive = relationshipState === "active";
+              const isRelated = relationshipState === "related";
+              const isDimmed = activeRecordId !== null && !isActive && !isRelated;
               return (
                 <button
-                  className={`map-node map-node--${record.status}${isSelected ? " is-selected" : ""}${isDimmed ? " is-dimmed" : ""}`}
+                  className={dotGridSurfaceClassName(
+                    `map-node map-node--${record.status}${isSelected ? " is-selected" : ""}${isActive && !isSelected ? " is-preview" : ""}${isDimmed ? " is-dimmed" : ""}`,
+                    relationshipState,
+                    true,
+                  )}
                   key={record.id}
                   onClick={() => onSelect(record.id)}
+                  onMouseEnter={() => onHoverRecord(record.id)}
+                  onMouseLeave={() => onHoverRecord(null)}
+                  onFocus={() => onFocusRecord(record.id)}
+                  onBlur={() => onFocusRecord(null)}
                   aria-pressed={isSelected}
                   aria-label={`Inspect ${record.id}, ${record.title}, ${statusName(record.status)}`}
                   style={{ left: `${(point.x / 720) * 100}%`, top: `${(point.y / 250) * 100}%` }}
@@ -222,12 +279,17 @@ function RelationshipMap({
       </div>
 
       <ul className="relationship-list" aria-label="Relationship descriptions">
-        {selectedRelations.map((relation) => {
-          const from = recordById.get(relation.from);
-          const to = recordById.get(relation.to);
+        {displayedRelations.map((relation) => {
+          const from = RECORD_BY_ID.get(relation.from);
+          const to = RECORD_BY_ID.get(relation.to);
           if (!from || !to) return null;
+          const isRelated = activeRecordId !== null &&
+            (relation.from === activeRecordId || relation.to === activeRecordId);
           return (
-            <li key={relation.id}>
+            <li
+              className={dotGridSurfaceClassName("relationship-row", isRelated ? "related" : null)}
+              key={relation.id}
+            >
               <span className={`relationship-type relationship-type--${relation.kind}`}>
                 {relationLabel(relation.kind)}
               </span>
@@ -239,7 +301,7 @@ function RelationshipMap({
           );
         })}
       </ul>
-      {selectedRelations.length === 0 && (
+      {activeRecordId !== null && activeRelationships.length === 0 && (
         <p className="relationship-list-empty">No explicit fixture relationship is recorded for this selection.</p>
       )}
     </section>
@@ -251,6 +313,8 @@ export default function Home() {
   const [recordType, setRecordType] = useState("all");
   const [status, setStatus] = useState("all");
   const [selectedId, setSelectedId] = useState("EV-SYN-014");
+  const [hoveredRecordId, setHoveredRecordId] = useState<string | null>(null);
+  const [focusedRecordId, setFocusedRecordId] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeSection, setActiveSection] = useState("explorer");
   const [inquiryOpen, setInquiryOpen] = useState(false);
@@ -293,11 +357,17 @@ export default function Home() {
   );
   const selectedRecord =
     records.find((record) => record.id === selectedId) ?? records[0] ?? null;
-  const selectedRelations = selectedRecord
-    ? SAMPLE_RELATIONSHIPS.filter(
-        (relation) => relation.from === selectedRecord.id || relation.to === selectedRecord.id,
-      )
-    : [];
+  const activeRecordId = hoveredRecordId ?? focusedRecordId ?? selectedRecord?.id ?? null;
+  const activeRelationships = relationshipsForRecord(activeRecordId);
+  const relatedRecordIds = useMemo(() => {
+    const relatedIds = new Set<string>();
+    for (const relation of activeRelationships) {
+      if (relation.from !== activeRecordId) relatedIds.add(relation.from);
+      if (relation.to !== activeRecordId) relatedIds.add(relation.to);
+    }
+    return relatedIds;
+  }, [activeRecordId, activeRelationships]);
+  const selectedRelations = relationshipsForRecord(selectedRecord?.id ?? null);
   const inquiry = selectedRecord && inquiryTopic
     ? inquiryAnswer(inquiryTopic, selectedRecord, selectedRelations)
     : null;
@@ -392,6 +462,8 @@ export default function Home() {
           </div>
           <p>No connected sources or live services.</p>
         </div>
+
+        <ThemeToggle />
       </aside>
 
       <div className="main-column">
@@ -409,7 +481,7 @@ export default function Home() {
                 Follow each record back to its source, see where accounts diverge, and keep what is unknown in view.
               </p>
             </div>
-            <div className="sample-stamp" aria-label="This screen uses synthetic sample data only">
+            <div className="sample-stamp dot-grid-surface" aria-label="This screen uses synthetic sample data only">
               <span className="sample-stamp-mark" aria-hidden="true">S</span>
               <span><strong>Synthetic sample</strong><small>Fictional records · no live sources</small></span>
             </div>
@@ -493,17 +565,28 @@ export default function Home() {
                       return (
                         <li className="record-list-item" key={record.id}>
                           <button
-                            className={`record-row${isSelected ? " record-row--selected" : ""}`}
+                            className={dotGridSurfaceClassName(
+                              `record-row${isSelected ? " record-row--selected" : ""}`,
+                              relationshipStateForRecord(record.id, activeRecordId, relatedRecordIds),
+                              true,
+                            )}
                             type="button"
                             aria-pressed={isSelected}
                             onClick={() => selectRecord(record.id)}
+                            onMouseEnter={() => setHoveredRecordId(record.id)}
+                            onMouseLeave={() => setHoveredRecordId(null)}
+                            onFocus={() => setFocusedRecordId(record.id)}
+                            onBlur={() => setFocusedRecordId(null)}
                           >
                             <span className="record-row-index">{String(index + 1).padStart(2, "0")}</span>
                             <span className="record-row-main">
                               <span className="record-row-topline"><span className="record-id">{record.id}</span><span className="record-date">{recordDate(record.recordedAt)}</span></span>
                               <strong className="record-title">{record.title}</strong>
                               <span className="record-source">{record.source}</span>
-                              <span className={`status-chip status-chip--${record.status}`}><StatusMark status={record.status} />{statusName(record.status)}</span>
+                              <span className={dotGridSurfaceClassName(
+                                `status-chip status-chip--${record.status}`,
+                                relationshipStateForRecord(record.id, activeRecordId, relatedRecordIds),
+                              )}><StatusMark status={record.status} />{statusName(record.status)}</span>
                             </span>
                             <span className="record-row-arrow" aria-hidden="true">↗</span>
                           </button>
@@ -515,12 +598,20 @@ export default function Home() {
                 <div className="panel-footnote"><span className="footnote-rule" />Every item is invented for this prototype.</div>
               </section>
 
-              <section className="detail-panel" aria-labelledby="detail-heading" aria-live="polite">
+              <section className={dotGridSurfaceClassName(
+                "detail-panel",
+                selectedRecord
+                  ? relationshipStateForRecord(selectedRecord.id, activeRecordId, relatedRecordIds)
+                  : null,
+              )} aria-labelledby="detail-heading" aria-live="polite">
                 {selectedRecord ? (
                   <>
                     <div className="detail-topline">
                       <p className="eyebrow">Selected record <span aria-hidden="true">/</span> {selectedRecord.recordType}</p>
-                      <span className={`status-chip status-chip--${selectedRecord.status}`}><StatusMark status={selectedRecord.status} />{statusName(selectedRecord.status)}</span>
+                      <span className={dotGridSurfaceClassName(
+                        `status-chip status-chip--${selectedRecord.status}`,
+                        relationshipStateForRecord(selectedRecord.id, activeRecordId, relatedRecordIds),
+                      )}><StatusMark status={selectedRecord.status} />{statusName(selectedRecord.status)}</span>
                     </div>
                     <div className="detail-title-row">
                       <div>
@@ -586,22 +677,34 @@ export default function Home() {
                       )}
                     </div>
 
-                    <dl className="provenance-grid">
+                    <dl className={dotGridSurfaceClassName(
+                      "provenance-grid",
+                      relationshipStateForRecord(selectedRecord.id, activeRecordId, relatedRecordIds),
+                    )}>
                       <div><dt>Source</dt><dd>{selectedRecord.source}</dd></div>
                       <div><dt>Record date</dt><dd>{recordDate(selectedRecord.recordedAt)}</dd></div>
                       <div className="provenance-location"><dt>Provenance</dt><dd>{selectedRecord.sourceRef}</dd></div>
                     </dl>
 
                     <div className="detail-sections">
-                      <section className="evidence-block evidence-block--observed" aria-labelledby="observed-heading">
+                      <section className={dotGridSurfaceClassName(
+                        "evidence-block evidence-block--observed",
+                        relationshipStateForRecord(selectedRecord.id, activeRecordId, relatedRecordIds),
+                      )} aria-labelledby="observed-heading">
                         <div className="block-heading"><span className="block-index">01</span><h3 id="observed-heading">Observed in source</h3><span className="block-tag">Record text</span></div>
                         <blockquote>{selectedRecord.observed}</blockquote>
                       </section>
-                      <section className="evidence-block evidence-block--interpretation" aria-labelledby="interpretation-heading">
+                      <section className={dotGridSurfaceClassName(
+                        "evidence-block evidence-block--interpretation",
+                        relationshipStateForRecord(selectedRecord.id, activeRecordId, relatedRecordIds),
+                      )} aria-labelledby="interpretation-heading">
                         <div className="block-heading"><span className="block-index">02</span><h3 id="interpretation-heading">Interpretation</h3><span className="block-tag">Reading, not fact</span></div>
                         <p>{selectedRecord.interpretation}</p>
                       </section>
-                      <section className="evidence-block evidence-block--unknown" aria-labelledby="unknown-heading">
+                      <section className={dotGridSurfaceClassName(
+                        "evidence-block evidence-block--unknown",
+                        relationshipStateForRecord(selectedRecord.id, activeRecordId, relatedRecordIds),
+                      )} aria-labelledby="unknown-heading">
                         <div className="block-heading"><span className="block-index">03</span><h3 id="unknown-heading">Not established</h3><span className="block-tag">Open question</span></div>
                         <p>{selectedRecord.missing}</p>
                       </section>
@@ -625,7 +728,15 @@ export default function Home() {
               </section>
             </div>
 
-            <RelationshipMap selectedId={selectedRecord?.id ?? null} onSelect={selectRecord} />
+            <RelationshipMap
+                selectedId={selectedRecord?.id ?? null}
+                activeRecordId={activeRecordId}
+                activeRelationships={activeRelationships}
+                relatedRecordIds={relatedRecordIds}
+                onSelect={selectRecord}
+                onHoverRecord={setHoveredRecordId}
+                onFocusRecord={setFocusedRecordId}
+              />
           </section>
 
           <section className="reading-guide" id="reading-guide" aria-labelledby="guide-heading">
