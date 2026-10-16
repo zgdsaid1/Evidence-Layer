@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import ThemeToggle from "./theme-toggle";
 import {
   filterEvidence,
@@ -62,6 +62,192 @@ function SearchIcon() {
       <circle cx="10.8" cy="10.8" r="6.8" />
       <path d="m16 16 4.2 4.2" />
     </svg>
+  );
+}
+
+type FilterOption = { value: string; label: string };
+
+function FilterDropdown({
+  label,
+  value,
+  options,
+  onChange,
+  className = "",
+}: {
+  label: string;
+  value: string;
+  options: FilterOption[];
+  onChange: (value: string) => void;
+  className?: string;
+}) {
+  const id = useId();
+  const rootRef = useRef<HTMLDivElement>(null);
+  const typeaheadRef = useRef("");
+  const typeaheadTimerRef = useRef<number | null>(null);
+  const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(() =>
+    Math.max(0, options.findIndex((option) => option.value === value)),
+  );
+  const [opensAbove, setOpensAbove] = useState(false);
+  const [maxHeight, setMaxHeight] = useState(224);
+  const selectedIndex = Math.max(0, options.findIndex((option) => option.value === value));
+  const selectedOption = options[selectedIndex];
+  const labelId = `${id}-label`;
+  const valueId = `${id}-value`;
+  const listboxId = `${id}-listbox`;
+  const optionId = (index: number) => `${id}-option-${index}`;
+
+  useLayoutEffect(() => {
+    if (!open) return;
+
+    const updatePlacement = () => {
+      const bounds = rootRef.current?.getBoundingClientRect();
+      if (!bounds) return;
+
+      const margin = 12;
+      const desiredHeight = 224;
+      const below = window.innerHeight - bounds.bottom - margin;
+      const above = bounds.top - margin;
+      const placeAbove = below < Math.min(desiredHeight, 160) && above > below;
+
+      setOpensAbove(placeAbove);
+      setMaxHeight(Math.max(80, Math.min(desiredHeight, placeAbove ? above : below)));
+    };
+
+    updatePlacement();
+    window.addEventListener("resize", updatePlacement);
+    window.addEventListener("scroll", updatePlacement, true);
+    return () => {
+      window.removeEventListener("resize", updatePlacement);
+      window.removeEventListener("scroll", updatePlacement, true);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    return () => document.removeEventListener("pointerdown", closeOnOutsidePointer);
+  }, [open]);
+
+  useEffect(() => {
+    if (open) document.getElementById(`${id}-option-${activeIndex}`)?.scrollIntoView({ block: "nearest" });
+  }, [activeIndex, id, open]);
+
+  function openAt(index = selectedIndex) {
+    setActiveIndex(index);
+    setOpen(true);
+  }
+
+  function choose(index: number) {
+    const option = options[index];
+    if (!option) return;
+    onChange(option.value);
+    setActiveIndex(index);
+    setOpen(false);
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      if (!open) openAt();
+      else setActiveIndex((current) => Math.min(options.length - 1, current + 1));
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      if (!open) openAt();
+      else setActiveIndex((current) => Math.max(0, current - 1));
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      setActiveIndex(0);
+      setOpen(true);
+    } else if (event.key === "End") {
+      event.preventDefault();
+      setActiveIndex(options.length - 1);
+      setOpen(true);
+    } else if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      if (open) choose(activeIndex);
+      else openAt();
+    } else if (event.key === "Escape" && open) {
+      event.preventDefault();
+      setOpen(false);
+    } else if (event.key === "Tab") {
+      setOpen(false);
+    } else if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      const character = event.key.toLocaleLowerCase();
+      const repeatedCharacter = typeaheadRef.current.split("").every((item) => item === character);
+      const searchText = repeatedCharacter
+        ? character
+        : `${typeaheadRef.current}${character}`;
+      typeaheadRef.current = searchText;
+      if (typeaheadTimerRef.current) window.clearTimeout(typeaheadTimerRef.current);
+      typeaheadTimerRef.current = window.setTimeout(() => {
+        typeaheadRef.current = "";
+        typeaheadTimerRef.current = null;
+      }, 650);
+
+      const matchingIndex = options.findIndex((option) =>
+        option.label.toLocaleLowerCase().startsWith(searchText),
+      );
+      if (matchingIndex >= 0) {
+        event.preventDefault();
+        setActiveIndex(matchingIndex);
+        setOpen(true);
+      }
+    }
+  }
+
+  return (
+    <div
+      className={`filter-select${className ? ` ${className}` : ""}${open ? " is-open" : ""}${open && opensAbove ? " is-open-up" : ""}`}
+      ref={rootRef}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false);
+      }}
+    >
+      <span className="visually-hidden" id={labelId}>{label}</span>
+      <button
+        aria-activedescendant={open ? optionId(activeIndex) : undefined}
+        aria-controls={listboxId}
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        aria-label={`${label}: ${selectedOption.label}`}
+        className="filter-select-trigger"
+        id={valueId}
+        onClick={() => (open ? setOpen(false) : openAt())}
+        onKeyDown={handleKeyDown}
+        role="combobox"
+        type="button"
+      >
+        <span>{selectedOption.label}</span>
+      </button>
+      <ul
+        aria-hidden={!open}
+        aria-labelledby={labelId}
+        className="filter-select-options"
+        id={listboxId}
+        role="listbox"
+        style={{ maxHeight }}
+      >
+        {options.map((option, index) => (
+          <li
+            aria-selected={option.value === value}
+            className={index === activeIndex ? "is-active" : undefined}
+            id={optionId(index)}
+            key={option.value}
+            onClick={() => choose(index)}
+            onPointerMove={() => setActiveIndex(index)}
+            role="option"
+          >
+            {option.label}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -199,6 +385,9 @@ function RelationshipMap({
           <h2 id="relationships-title">
             {activeRecordId ? `Links around ${activeRecordId}` : "Relationships to inspect"}
           </h2>
+          <span className="map-scroll-hint" aria-hidden="true">
+            Swipe or scroll to inspect all records
+          </span>
         </div>
         <span className="map-count">
           {activeRecordId ? `${activeRelationships.length} linked records` : `${SAMPLE_RELATIONSHIPS.length} links · ${SAMPLE_EVIDENCE.length} records`}
@@ -503,29 +692,34 @@ export default function Home() {
                   autoComplete="off"
                 />
               </label>
-              <label className="filter-select">
-                <span className="visually-hidden">Filter by record type</span>
-                <select value={recordType} onChange={(event) => {
-                  setRecordType(event.target.value);
+              <FilterDropdown
+                label="Filter by record type"
+                value={recordType}
+                onChange={(nextValue) => {
+                  setRecordType(nextValue);
                   setInquiryTopic(null);
-                }}>
-                  <option value="all">All record types</option>
-                  <option value="Field note">Field notes</option>
-                  <option value="Progress log">Progress logs</option>
-                  <option value="Scope note">Scope notes</option>
-                </select>
-              </label>
-              <label className="filter-select filter-select--status">
-                <span className="visually-hidden">Filter by review status</span>
-                <select value={status} onChange={(event) => {
-                  setStatus(event.target.value);
+                }}
+                options={[
+                  { value: "all", label: "All record types" },
+                  { value: "Field note", label: "Field notes" },
+                  { value: "Progress log", label: "Progress logs" },
+                  { value: "Scope note", label: "Scope notes" },
+                ]}
+              />
+              <FilterDropdown
+                className="filter-select--status"
+                label="Filter by review status"
+                value={status}
+                onChange={(nextValue) => {
+                  setStatus(nextValue);
                   setInquiryTopic(null);
-                }}>
-                  <option value="all">All states</option>
-                  <option value="conflict">In tension</option>
-                  <option value="context-gap">Context gap</option>
-                </select>
-              </label>
+                }}
+                options={[
+                  { value: "all", label: "All states" },
+                  { value: "conflict", label: "In tension" },
+                  { value: "context-gap", label: "Context gap" },
+                ]}
+              />
               {hasFilters && <button className="clear-filters" type="button" onClick={clearFilters}>Clear</button>}
             </div>
 
