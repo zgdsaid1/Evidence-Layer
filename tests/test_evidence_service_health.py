@@ -29,18 +29,23 @@ def test_health_route_has_exact_response_contract() -> None:
     assert response.content == b'{"status":"ok"}'
 
 
-def test_only_health_route_is_registered_and_docs_are_disabled() -> None:
+def test_service_routes_are_limited_and_docs_are_disabled() -> None:
     routes = {
         (method, route.path)
         for route in service_app.app.routes
         if isinstance(route, APIRoute)
         for method in route.methods or ()
     }
-    assert routes == {("GET", "/healthz")}
+    assert routes == {
+        ("GET", "/healthz"),
+        ("GET", "/v1/me"),
+        ("GET", "/v1/workspaces/{workspace_id}"),
+    }
 
     with TestClient(service_app.app) as client:
         for path in ("/", "/docs", "/redoc", "/openapi.json", "/retrieve_evidence"):
             assert client.get(path).status_code == 404
+        assert client.get("/v1/me").status_code == 401
         assert client.post("/healthz").status_code in {404, 405}
         assert client.head("/healthz").status_code in {404, 405}
 
@@ -50,6 +55,11 @@ def test_startup_needs_no_credentials_and_does_not_load_integrations(
 ) -> None:
     for name in (
         "SUPABASE_URL",
+        "SUPABASE_PUBLISHABLE_KEY",
+        "SUPABASE_JWT_ISSUER",
+        "SUPABASE_JWT_AUDIENCE",
+        "SUPABASE_JWT_ALGORITHMS",
+        "SUPABASE_JWKS_CACHE_TTL_SECONDS",
         "SUPABASE_SERVICE_ROLE_KEY",
         "JEV_API_KEY",
         "TYPESAFE_API_KEY",

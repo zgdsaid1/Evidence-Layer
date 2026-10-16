@@ -20,8 +20,25 @@ jobs:
       - name: Install core, test, and service dependencies
         run: python -m pip install -e ".[dev,service]"
       - name: Run focused service tests
-        run: PYTHONDONTWRITEBYTECODE=1 python -m pytest -p no:cacheprovider tests/test_evidence_service_health.py
+        run: PYTHONDONTWRITEBYTECODE=1 python -m pytest -p no:cacheprovider tests/test_evidence_service_health.py tests/test_evidence_service_auth.py tests/test_evidence_service_config.py tests/test_evidence_service_repository.py
       - name: Run full test suite
         run: PYTHONDONTWRITEBYTECODE=1 python -m pytest -p no:cacheprovider
       - name: Build service image without publishing
         run: docker build -f services/evidence-service/Dockerfile -t evidence-service:ci .
+
+  workspace-rls:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.121.0
+      - name: Start the local Supabase stack
+        run: supabase start
+      - name: Apply migrations to the local database
+        run: supabase db reset --local
+      - name: Run Postgres RLS integration tests
+        run: supabase test db --local
+      - name: Stop the local Supabase stack
+        if: always()
+        run: supabase stop --no-backup
